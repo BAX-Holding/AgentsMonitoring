@@ -586,14 +586,28 @@ def _openclaw_model() -> str | None:
     return _pretty_model(found[0]) if found else None
 
 
+def _hermes_model() -> str | None:
+    """Hermes' configured model from ~/.hermes/config.yaml (``model.default``). Hermes runs on
+    the openai-codex *provider* but selects its own model there, so the provider default (Codex)
+    is not authoritative — read the agent's own config so the tag follows a model switch.
+    Best-effort; returns None on any failure so the caller can fall back."""
+    try:
+        head = (Path.home() / ".hermes" / "config.yaml").read_text("utf-8")[:1500]
+    except OSError:
+        return None
+    m = re.search(r"(?m)^model:\s*$\s*^\s+default:\s*(\S+)", head)
+    return _pretty_model(m.group(1)) if m else None
+
+
 def daemon_model(name: str) -> str | None:
     """Concrete model a known daemon runs (best-effort, for the tag)."""
     n = name.lower()
     if "openclaw" in n:
         return _openclaw_model()
     if "hermes" in n:
-        # Hermes here runs on the openai-codex provider → same model as Codex.
-        return _codex_model() or _codex_model_any()
+        # Hermes picks its own model on the openai-codex provider (model.default in
+        # ~/.hermes/config.yaml); fall back to the Codex rollout model if unreadable.
+        return _hermes_model() or _codex_model() or _codex_model_any()
     return None
 
 
