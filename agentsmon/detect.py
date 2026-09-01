@@ -116,7 +116,7 @@ def pinned_agents(pinned: list[dict]) -> list[dict]:
         out.append({
             "name": d.get("name"), "kind": "daemon",
             "label": d.get("tag") or model or d.get("name"),
-            "vendor": d.get("vendor") or vendor_for_model(model),
+            "vendor": d.get("vendor") or vendor_for_agent(None, model),
             "name_color": d.get("name_color"),
             "session_id": None, "alive": alive, "age": age, "latency_ms": lat,
             "health_url": health_url,
@@ -432,6 +432,17 @@ def daemon_model(name: str) -> str | None:
     return None
 
 
+def vendor_for_agent(kind: str | None, label: str | None) -> str | None:
+    """Tag colour for one agent row — the SINGLE place that decides it.
+
+    A recognised kind wins (Codex stays OpenAI orange even if the label is odd); anything
+    matched by a user-supplied pattern has no built-in kind, so the model name decides.
+    Before this was factored out, daemons used the model fallback and tmux agents did not,
+    so the same model showed a green tag in one row and a grey one in the next.
+    """
+    return KIND_VENDOR.get(kind or "") or vendor_for_model(label)
+
+
 def vendor_for_model(model: str | None) -> str | None:
     """Maker → tag colour, inferred from a model name."""
     if not model:
@@ -490,7 +501,8 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
         resume = RESUME_TEMPLATES.get(kind, "").format(id=sid) if (sid and kind in RESUME_TEMPLATES) else None
         agents.append({
             "name": s["name"], "kind": kind, "label": label, "session_id": sid,
-            "vendor": KIND_VENDOR.get(kind), "alive": kind != "shell", "age": age,
+            "vendor": vendor_for_agent(kind, label),
+            "alive": kind != "shell", "age": age,
             "resume_cmd": resume, "pids": sorted(tree),
         })
     return agents

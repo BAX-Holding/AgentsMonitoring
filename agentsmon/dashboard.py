@@ -341,6 +341,13 @@ def _agents_state(cfg: dict) -> list[dict]:
             a["vendor"] = ov["vendor"]
         if ov.get("restart"):
             a["resume_cmd"] = ov["restart"]
+            # A freshly re-exec'd agent often drops the id from its argv, so detection finds
+            # nothing and the column showed "— none" even though we know the id: it is right
+            # there in the configured resume command (reported 2026-09-01).
+            if not a.get("session_id"):
+                m = detect.UUID_RE.search(ov["restart"])
+                if m:
+                    a["session_id"] = m.group(0)
     agents = detect.pinned_agents(cfg.get("pinned_daemons", [])) + tmux
     # Telegram deep-link icon. Two sources, explicit wins:
     #  1) an explicit `telegram` field on an agent/daemon config entry (for daemons with their OWN
