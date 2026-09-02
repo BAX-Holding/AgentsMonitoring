@@ -295,11 +295,53 @@ def _claude_model_from_transcript(path: str) -> str | None:
     return None
 
 
-def _claude_info_for_cwd(cwd: str) -> tuple[str | None, str | None]:
-    """A freshly launched `claude` has no ``--resume`` id on argv, so resolve its session UUID
-    (and concrete model) from ~/.claude/projects/ — the newest transcript whose ``cwd`` matches."""
+def claude_project_dirs(cwd: str) -> list[Path]:
+    """Candidate transcript directories for a working directory.
+
+    Claude Code stores a session under ``~/.claude/projects/<cwd with / replaced by ->``:
+    ``/Users/me/dev/app`` → ``-Users-me-dev-app``. Both the literal cwd and its resolved form
+    are tried, because they differ where the path crosses a symlink — on macOS
+    ``/home/x`` resolves to ``/System/Volumes/Data/home/x``, and the directory is named after
+    whichever form the agent was started with. Deriving the name forward is exact; reading it
+    backwards would be ambiguous, and we never need to.
+    """
     base = Path.home() / ".claude" / "projects"
-    if not cwd or not base.is_dir():
+    formy, videne = [], set()
+    for c in (cwd, os.path.realpath(cwd)):
+        name = c.replace("/", "-")
+        if name not in videne:
+            videne.add(name)
+            formy.append(base / name)
+    return formy
+
+
+def _claude_info_for_cwd(cwd: str, taken: set | None = None) -> tuple[str | None, str | None]:
+    """Session UUID and concrete model for a `claude` started without ``--resume``.
+
+    The transcript FILE is created (and named after the session uuid) the moment the agent
+    starts — its first line already carries ``sessionId``. Earlier this scanned transcript
+    CONTENT for a matching ``cwd``, which only appears once the session has received a user
+    message, so a young agent showed no id and no model for its first minutes. Going through
+    the project directory instead makes both available from the first second.
+
+    ``taken`` holds ids already assigned to other agents, so two agents sharing one working
+    directory do not both claim the newest transcript.
+    """
+    if not cwd:
+        return None, None
+    taken = taken or set()
+    for d in claude_project_dirs(cwd):
+        if not d.is_dir():
+            continue
+        for f in sorted(d.glob("*.jsonl"), key=lambda x: x.stat().st_mtime, reverse=True):
+            m = UUID_RE.search(f.name)
+            sid = m.group(0) if m else f.stem
+            if sid in taken:
+                continue
+            return sid, _claude_model_from_transcript(str(f))
+    # Fallback: older layouts, or a cwd that does not map to a directory we can see.
+    base = Path.home() / ".claude" / "projects"
+    if not base.is_dir():
         return None, None
     target = os.path.realpath(cwd)
     files = glob.glob(str(base / "**" / "*.jsonl"), recursive=True)
@@ -318,6 +360,8 @@ def _claude_info_for_cwd(cwd: str) -> tuple[str | None, str | None]:
             if c and os.path.realpath(c) == target:
                 m = UUID_RE.search(os.path.basename(f))
                 sid = m.group(0) if m else Path(f).stem
+                if sid in taken:
+                    continue
                 return sid, _claude_model_from_transcript(f)
     return None, None
 
@@ -489,6 +533,9 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
     procs, children = _proc_table()
     codex_model = _codex_model()
     agents = []
+    # Session ids already claimed in this pass, so two agents sharing one working directory
+    # cannot both be handed the newest transcript in it.
+    prirazena: set = set()
     for s in tmux_sessions():
         pids = _pane_pids(s["name"])
         tree = _subtree(pids, children)
@@ -510,7 +557,7 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
         # the concrete model by cwd, so both show up (just like Codex does).
         if kind == "claude-code":
             cwd = _session_cwd(s["name"])
-            csid, cmodel = _claude_info_for_cwd(cwd) if cwd else (None, None)
+            csid, cmodel = _claude_info_for_cwd(cwd, prirazena) if cwd else (None, None)
             if sid is None:
                 sid = csid
             # Transcript first — it reports the model actually in use (a session can be
@@ -526,6 +573,8 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
                 label = amodel
         age = int(now - s["created"]) if s["created"] else None
         resume = RESUME_TEMPLATES.get(kind, "").format(id=sid) if (sid and kind in RESUME_TEMPLATES) else None
+        if sid:
+            prirazena.add(sid)
         agents.append({
             "name": s["name"], "kind": kind, "label": label, "session_id": sid,
             "vendor": vendor_for_agent(kind, label),

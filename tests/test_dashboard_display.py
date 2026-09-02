@@ -187,3 +187,69 @@ class ClaudeLabelDecision(unittest.TestCase):
     def test_generic_label_only_as_last_resort(self):
         self.assertEqual(detect.label_for_claude(
             None, ["claude --resume abc"], "Claude Code"), "Claude Code")
+
+
+class FreshSessionId(unittest.TestCase):
+    """Session id must be there from the first second. It used to be read by scanning
+    transcript CONTENT for a matching `cwd`, which only appears once the session has had a
+    user message — so a young agent showed "— none" for minutes."""
+
+    def setUp(self):
+        import tempfile, pathlib
+        self.tmp = tempfile.mkdtemp()
+        self.home = pathlib.Path(self.tmp)
+        self._orig = detect.Path.home
+        detect.Path.home = staticmethod(lambda: self.home)
+
+    def tearDown(self):
+        detect.Path.home = self._orig
+        import shutil; shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _transcript(self, cwd, sid, lines):
+        d = self.home / ".claude" / "projects" / cwd.replace("/", "-")
+        d.mkdir(parents=True, exist_ok=True)
+        f = d / f"{sid}.jsonl"
+        f.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return f
+
+    def test_project_dir_mapping(self):
+        names = [d.name for d in detect.claude_project_dirs("/Users/asistent/dev/app")]
+        self.assertIn("-Users-asistent-dev-app", names)
+
+    def test_symlinked_path_tries_both_forms(self):
+        """On macOS /home/x resolves elsewhere; the literal form must still be tried."""
+        names = [d.name for d in detect.claude_project_dirs("/home/domi")]
+        self.assertIn("-home-domi", names)
+
+    def test_id_found_before_any_user_message(self):
+        """Only a startup record — no `cwd` anywhere yet."""
+        sid = "11111111-2222-3333-4444-555555555555"
+        self._transcript("/home/domi", sid,
+                         ['{"type":"permission-mode","permissionMode":"default","sessionId":"%s"}' % sid])
+        got_sid, got_model = detect._claude_info_for_cwd("/home/domi")
+        self.assertEqual(got_sid, sid)
+        self.assertIsNone(got_model)   # no assistant turn yet → model comes from argv
+
+    def test_model_read_once_the_session_answers(self):
+        sid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        self._transcript("/home/domi", sid, [
+            '{"type":"permission-mode","sessionId":"%s"}' % sid,
+            '{"type":"assistant","message":{"model":"claude-fable-5-1"}}'])
+        got_sid, got_model = detect._claude_info_for_cwd("/home/domi")
+        self.assertEqual(got_sid, sid)
+        self.assertEqual(got_model, "Fable 5.1")
+
+    def test_two_agents_in_one_cwd_get_different_ids(self):
+        import time
+        a = "aaaaaaaa-1111-2222-3333-444444444444"
+        b = "bbbbbbbb-1111-2222-3333-444444444444"
+        fa = self._transcript("/home/domi", a, ['{"type":"permission-mode"}'])
+        time.sleep(0.02)
+        fb = self._transcript("/home/domi", b, ['{"type":"permission-mode"}'])
+        first, _ = detect._claude_info_for_cwd("/home/domi")
+        second, _ = detect._claude_info_for_cwd("/home/domi", {first})
+        self.assertNotEqual(first, second)
+        self.assertEqual({first, second}, {a, b})
+
+    def test_unknown_cwd_returns_nothing(self):
+        self.assertEqual(detect._claude_info_for_cwd("/nope/nowhere"), (None, None))
