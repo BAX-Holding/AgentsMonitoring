@@ -139,3 +139,51 @@ class DashboardUrl(unittest.TestCase):
             self.assertNotIn("not responding", out)
         finally:
             srv.close()
+
+
+class ModelFromArgv(unittest.TestCase):
+    """A freshly started Claude Code agent has no transcript yet, so the model has to come
+    off the command line — otherwise the dashboard shows a bare 'Claude Code' for minutes."""
+
+    def test_fable_is_recognised(self):
+        self.assertEqual(
+            detect._model_from_argv(["claude --resume abc --model claude-fable-5-1"]),
+            "Fable 5.1")
+
+    def test_opus_and_sonnet(self):
+        self.assertEqual(detect._model_from_argv(["claude --model claude-opus-5"]), "Opus 5")
+        self.assertEqual(detect._model_from_argv(["claude --model claude-sonnet-5"]), "Sonnet 5")
+
+    def test_equals_form(self):
+        self.assertEqual(detect._model_from_argv(["claude --model=claude-opus-4-8"]), "Opus 4.8")
+
+    def test_quoted_value(self):
+        self.assertEqual(detect._model_from_argv(['claude --model "claude-fable-5-1"']), "Fable 5.1")
+
+    def test_no_flag_returns_none(self):
+        self.assertIsNone(detect._model_from_argv(["claude --resume abc"]))
+        self.assertIsNone(detect._model_from_argv([]))
+
+    def test_unknown_id_passes_through(self):
+        self.assertEqual(detect._model_from_argv(["claude --model something-new"]), "something-new")
+
+    def test_scans_every_command_in_the_tree(self):
+        self.assertEqual(
+            detect._model_from_argv(["bash -lc wrapper", "claude --model claude-fable-5-1"]),
+            "Fable 5.1")
+
+
+class ClaudeLabelDecision(unittest.TestCase):
+    """The whole decision path, so removing the argv fallback fails the suite."""
+
+    def test_transcript_wins_over_argv(self):
+        self.assertEqual(detect.label_for_claude(
+            "Opus 5", ["claude --model claude-fable-5-1"], "Claude Code"), "Opus 5")
+
+    def test_argv_used_when_transcript_is_silent(self):
+        self.assertEqual(detect.label_for_claude(
+            None, ["claude --model claude-fable-5-1"], "Claude Code"), "Fable 5.1")
+
+    def test_generic_label_only_as_last_resort(self):
+        self.assertEqual(detect.label_for_claude(
+            None, ["claude --resume abc"], "Claude Code"), "Claude Code")

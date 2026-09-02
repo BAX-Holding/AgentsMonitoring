@@ -244,6 +244,31 @@ def _codex_session_for_cwd(cwd: str) -> str | None:
     return _codex_info_for_cwd(cwd)[0]
 
 
+def label_for_claude(transcript_model: str | None, cmds: list[str], fallback: str) -> str:
+    """The model tag for a Claude Code row — the SINGLE place that decides it.
+
+    Order matters: the transcript reports the model actually in use (a session can be
+    switched at runtime with /model), so it wins. argv covers the first minutes, before any
+    transcript exists. The generic kind label is the last resort.
+    """
+    return transcript_model or _model_from_argv(cmds) or fallback
+
+
+def _model_from_argv(cmds: list[str]) -> str | None:
+    """The model a session was launched with, straight off its command line.
+
+    A transcript only exists once the session has actually answered something, so a freshly
+    started agent showed the generic kind label ("Claude Code") with no model for its first
+    minutes. `--model` is on argv from the very first second, so use it when the transcript
+    cannot answer yet.
+    """
+    for cmd in cmds:
+        m = re.search(r"--model[= ]+(\S+)", cmd)
+        if m:
+            return _pretty_claude_model(m.group(1).strip("\"'"))
+    return None
+
+
 def _pretty_claude_model(raw: str) -> str:
     """``claude-opus-4-8`` → ``Opus 4.8`` (family + version); unknown ids returned as-is."""
     m = re.match(r"claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d+))?", raw or "")
@@ -488,8 +513,10 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
             csid, cmodel = _claude_info_for_cwd(cwd) if cwd else (None, None)
             if sid is None:
                 sid = csid
-            if cmodel:
-                label = cmodel
+            # Transcript first — it reports the model actually in use (a session can be
+            # switched with /model). argv is the fallback for a session young enough that
+            # no transcript exists yet.
+            label = label_for_claude(cmodel, ranked, label)
         elif kind == "antigravity":
             cwd = _session_cwd(s["name"])
             asid, amodel = _antigravity_info_for_cwd(cwd) if cwd else (None, None)
