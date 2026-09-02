@@ -253,3 +253,110 @@ class FreshSessionId(unittest.TestCase):
 
     def test_unknown_cwd_returns_nothing(self):
         self.assertEqual(detect._claude_info_for_cwd("/nope/nowhere"), (None, None))
+
+
+class AntigravityPresence(unittest.TestCase):
+    """A brand-new `agy` has no entry in cache/last_conversations.json yet — that file is
+    written when the conversation is persisted. The presence lock it holds open is named
+    after the conversation and exists from startup."""
+
+    def test_id_read_from_the_lock_a_process_holds(self):
+        orig = detect.open_files
+        detect.open_files = lambda pids: [
+            "/home/domi/.gemini/antigravity-cli/log/cli.log",
+            "/home/domi/.gemini/antigravity-cli/presence/3d06ea18-306c-47f4-a173-3ed9a452dc05.lock",
+        ]
+        try:
+            self.assertEqual(detect._antigravity_sid_from_presence([1]),
+                             "3d06ea18-306c-47f4-a173-3ed9a452dc05")
+        finally:
+            detect.open_files = orig
+
+    def test_no_lock_means_no_id(self):
+        orig = detect.open_files
+        detect.open_files = lambda pids: ["/tmp/whatever.log"]
+        try:
+            self.assertIsNone(detect._antigravity_sid_from_presence([1]))
+        finally:
+            detect.open_files = orig
+
+    def test_a_lock_without_a_uuid_is_ignored(self):
+        orig = detect.open_files
+        detect.open_files = lambda pids: ["/x/presence/not-a-uuid.lock"]
+        try:
+            self.assertIsNone(detect._antigravity_sid_from_presence([1]))
+        finally:
+            detect.open_files = orig
+
+    def test_open_files_survives_a_missing_lsof(self):
+        """Must degrade to an empty list, never raise — it is only ever a fallback."""
+        self.assertEqual(detect.open_files([]), [])
+        self.assertIsInstance(detect.open_files([999999999]), list)
+
+
+class AntigravityDecisionAndParsing(unittest.TestCase):
+    """The wiring and the lsof parsing, so breaking either one fails the suite."""
+
+    LOCK = "/h/.gemini/antigravity-cli/presence/3d06ea18-306c-47f4-a173-3ed9a452dc05.lock"
+
+    def test_map_wins_when_present(self):
+        orig = detect.open_files
+        detect.open_files = lambda pids: [self.LOCK]
+        try:
+            self.assertEqual(detect.antigravity_sid("aaaaaaaa-1111-2222-3333-444444444444", [1]),
+                             "aaaaaaaa-1111-2222-3333-444444444444")
+        finally:
+            detect.open_files = orig
+
+    def test_presence_used_when_map_is_empty(self):
+        orig = detect.open_files
+        detect.open_files = lambda pids: [self.LOCK]
+        try:
+            self.assertEqual(detect.antigravity_sid(None, [1]),
+                             "3d06ea18-306c-47f4-a173-3ed9a452dc05")
+        finally:
+            detect.open_files = orig
+
+    def test_lsof_field_output_is_parsed(self):
+        """`lsof -Fn` prints one field per line, names prefixed with n."""
+        import types
+        orig_run, orig_which = detect._run, detect.shutil.which
+        detect.shutil.which = lambda x: "/usr/sbin/lsof"
+        detect._run = lambda *a, **k: types.SimpleNamespace(
+            returncode=0, stdout="p755\nfcwd\nn/Users/me\nftxt\nn" + self.LOCK + "\n", stderr="")
+        try:
+            got = detect.open_files([755])
+            self.assertIn(self.LOCK, got)
+            self.assertIn("/Users/me", got)
+            self.assertNotIn("p755", got)
+        finally:
+            detect._run, detect.shutil.which = orig_run, orig_which
+
+
+class DiscoverAgentsWiring(unittest.TestCase):
+    """End-to-end through discover_agents, so the call sites are covered too — testing the
+    decision helpers alone left the one-line wiring free to be deleted silently."""
+
+    LOCK = "/h/.gemini/antigravity-cli/presence/3d06ea18-306c-47f4-a173-3ed9a452dc05.lock"
+
+    def setUp(self):
+        self.orig = {n: getattr(detect, n) for n in
+                     ("tmux_sessions", "_pane_pids", "_proc_table", "_codex_model",
+                      "_session_cwd", "open_files", "_antigravity_info_for_cwd")}
+        detect.tmux_sessions = lambda: [{"name": "Domi - Agy", "created": 0}]
+        detect._pane_pids = lambda name: [42]
+        detect._proc_table = lambda: ({42: "agy --dangerously-skip-permissions"}, {})
+        detect._codex_model = lambda: None
+        detect._session_cwd = lambda name: "/home/domi"
+        detect.open_files = lambda pids: [self.LOCK]
+        # The workspace map has nothing yet — the situation right after launch.
+        detect._antigravity_info_for_cwd = lambda cwd: (None, None)
+
+    def tearDown(self):
+        for n, f in self.orig.items():
+            setattr(detect, n, f)
+
+    def test_fresh_agy_still_gets_its_conversation_id(self):
+        agents = {a["name"]: a for a in detect.discover_agents(now=1000)}
+        self.assertEqual(agents["Domi - Agy"]["session_id"],
+                         "3d06ea18-306c-47f4-a173-3ed9a452dc05")

@@ -402,6 +402,60 @@ def _antigravity_model_from_db(sid: str | None) -> str | None:
     return _pretty_claude_model(raw) if raw.startswith("claude") else _pretty_gemini_model(raw)
 
 
+def open_files(pids: list) -> list[str]:
+    """Paths a process currently holds open. Linux reads /proc directly; macOS shells out to
+    lsof. Best-effort: an empty list simply means we fall back to other clues."""
+    out = []
+    for pid in pids or []:
+        fd = Path("/proc") / str(pid) / "fd"
+        if fd.is_dir():
+            for link in fd.iterdir():
+                try:
+                    out.append(os.path.realpath(link))
+                except OSError:
+                    pass
+            continue
+        # -Fn is lsof's machine-readable mode: one field per line, names prefixed with "n".
+        # Parsing the human table by column breaks on paths with spaces and on rows where a
+        # column is empty — which is why it silently returned nothing the first time.
+        # lsof lives in /usr/sbin on macOS, which is not on the PATH a tmux agent inherits —
+        # calling it by bare name silently produced nothing at all.
+        exe = shutil.which("lsof") or next(
+            (c for c in ("/usr/sbin/lsof", "/usr/bin/lsof") if os.path.exists(c)), None)
+        if not exe:
+            continue
+        r = _run([exe, "-p", str(pid), "-Fn"], timeout=3)
+        if r and r.returncode == 0:
+            for line in r.stdout.splitlines():
+                if line.startswith("n/"):
+                    out.append(line[1:])
+    return out
+
+
+def antigravity_sid(mapped: str | None, pids: list) -> str | None:
+    """Conversation id for an Antigravity row — the SINGLE place that decides it.
+
+    The workspace map wins where it exists; the presence lock covers a session young enough
+    that the map has not been written yet.
+    """
+    return mapped or _antigravity_sid_from_presence(pids)
+
+
+def _antigravity_sid_from_presence(pids: list) -> str | None:
+    """The conversation id of a RUNNING agy, from the presence lock it holds open.
+
+    ``~/.gemini/antigravity-cli/presence/<conversation-uuid>.lock`` is opened at startup, so
+    this answers immediately — unlike cache/last_conversations.json, which is only written
+    once the conversation has been persisted and left a brand-new agent with no id at all.
+    """
+    for f in open_files(pids):
+        if "/presence/" in f and f.endswith(".lock"):
+            m = UUID_RE.search(os.path.basename(f))
+            if m:
+                return m.group(0)
+    return None
+
+
 def _antigravity_info_for_cwd(cwd: str) -> tuple[str | None, str | None]:
     """(conversation id, model) for an Antigravity session. A fresh `agy` has no ``--conversation``
     id on argv; it maps the current workspace → conversation in cache/last_conversations.json, and
@@ -568,9 +622,8 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
             cwd = _session_cwd(s["name"])
             asid, amodel = _antigravity_info_for_cwd(cwd) if cwd else (None, None)
             if sid is None:
-                sid = asid
-            if amodel:
-                label = amodel
+                sid = antigravity_sid(asid, tree)
+            label = amodel or _model_from_argv(ranked) or label
         age = int(now - s["created"]) if s["created"] else None
         resume = RESUME_TEMPLATES.get(kind, "").format(id=sid) if (sid and kind in RESUME_TEMPLATES) else None
         if sid:
