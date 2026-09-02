@@ -87,3 +87,55 @@ class SessionIdFallback(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class DashboardUrl(unittest.TestCase):
+    """`agentsmon status` has to tell you where the report lives — the URL used to be
+    printed once by the wizard and never again."""
+
+    def setUp(self):
+        from agentsmon import status
+        self.status = status
+
+    def test_exposed_host_shows_both_urls(self):
+        out = "\n".join(self.status._dashboard_lines(
+            {"dashboard": {"host": "5.10.251.171", "port": 8765}}))
+        self.assertIn("http://5.10.251.171:8765", out)
+        self.assertIn("local: http://127.0.0.1:8765", out)
+
+    def test_localhost_only_shows_one(self):
+        out = "\n".join(self.status._dashboard_lines(
+            {"dashboard": {"host": "127.0.0.1", "port": 9000}}))
+        self.assertIn("http://127.0.0.1:9000", out)
+        self.assertNotIn("local:", out)
+
+    def test_wildcard_host_resolves_to_a_real_address(self):
+        out = "\n".join(self.status._dashboard_lines(
+            {"dashboard": {"host": "0.0.0.0", "port": 8765}}))
+        self.assertNotIn("0.0.0.0", out)
+
+    def test_auth_is_mentioned(self):
+        out = "\n".join(self.status._dashboard_lines(
+            {"dashboard": {"host": "1.2.3.4", "port": 8765, "auth": {"user": "domi"}}}))
+        self.assertIn("domi", out)
+
+    def test_missing_config_falls_back_to_defaults(self):
+        out = "\n".join(self.status._dashboard_lines({}))
+        self.assertIn("8765", out)
+
+    def test_probe_targets_the_bound_interface(self):
+        """A dashboard bound to one specific IP must not be reported dead just because
+        nothing listens on 127.0.0.1 (the setup on the machine this was written on)."""
+        import socket
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", 0))
+        port = srv.getsockname()[1]
+        srv.listen(1)
+        try:
+            out = "\n".join(self.status._dashboard_lines(
+                {"dashboard": {"host": "127.0.0.1", "port": port}}))
+            self.assertIn("🟢", out)
+            self.assertNotIn("not responding", out)
+        finally:
+            srv.close()
