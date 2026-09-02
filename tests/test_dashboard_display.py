@@ -360,3 +360,49 @@ class DiscoverAgentsWiring(unittest.TestCase):
         agents = {a["name"]: a for a in detect.discover_agents(now=1000)}
         self.assertEqual(agents["Domi - Agy"]["session_id"],
                          "3d06ea18-306c-47f4-a173-3ed9a452dc05")
+
+
+class AntigravityModel(unittest.TestCase):
+    """The model for an Antigravity row. Two silent failures lived here: the conversation
+    store was opened in a mode that cannot work on a LIVE (WAL) database — i.e. on every
+    running agent, the only kind we ask about — and the id was needed before it was known."""
+
+    def setUp(self):
+        import tempfile, pathlib, sqlite3
+        self.tmp = tempfile.mkdtemp()
+        base = pathlib.Path(self.tmp) / ".gemini" / "antigravity-cli"
+        (base / "conversations").mkdir(parents=True)
+        self.sid = "3d06ea18-306c-47f4-a173-3ed9a452dc05"
+        db = base / "conversations" / f"{self.sid}.db"
+        con = sqlite3.connect(db)
+        con.execute("CREATE TABLE gen_metadata (idx INTEGER, data BLOB, size INTEGER)")
+        con.execute("INSERT INTO gen_metadata VALUES (1, ?, 0)", (b'{"m":"gemini-backup"}',))
+        con.execute("INSERT INTO gen_metadata VALUES (2, ?, 0)",
+                    (b'{"model":"gemini-3.6-flash-medium"}',))
+        con.execute("PRAGMA journal_mode=WAL")   # how a live store actually looks
+        con.commit(); con.close()
+        self.orig = detect._antigravity_base
+        detect._antigravity_base = lambda: base
+
+    def tearDown(self):
+        detect._antigravity_base = self.orig
+        import shutil; shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_model_read_from_a_live_wal_database(self):
+        self.assertEqual(detect._antigravity_model_from_db(self.sid), "Gemini 3.6 Flash")
+
+    def test_junk_strings_are_not_mistaken_for_models(self):
+        """`gemini-backup` and `gemini-20260425-144749` both matched the old pattern."""
+        self.assertIsNone(detect._model_like("gemini-backup"))
+        self.assertIsNone(detect._model_like("gemini-20260425-144749"))
+        self.assertEqual(detect._model_like("gemini-3.6-flash-medium"), "gemini-3.6-flash-medium")
+
+    def test_label_order_settings_then_db_then_argv(self):
+        self.assertEqual(detect.antigravity_label("Gemini 3.7 Flash", self.sid, [], "Antigravity"),
+                         "Gemini 3.7 Flash")
+        self.assertEqual(detect.antigravity_label(None, self.sid, [], "Antigravity"),
+                         "Gemini 3.6 Flash")
+        self.assertEqual(detect.antigravity_label(None, None, ["agy --model gemini-3-flash"],
+                                                  "Antigravity"), "Gemini 3 Flash")
+        self.assertEqual(detect.antigravity_label(None, None, ["agy"], "Antigravity"),
+                         "Antigravity")

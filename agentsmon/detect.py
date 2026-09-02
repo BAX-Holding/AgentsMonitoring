@@ -265,8 +265,17 @@ def _model_from_argv(cmds: list[str]) -> str | None:
     for cmd in cmds:
         m = re.search(r"--model[= ]+(\S+)", cmd)
         if m:
-            return _pretty_claude_model(m.group(1).strip("\"'"))
+            return prettify_model(m.group(1).strip("\"'"))
     return None
+
+
+def prettify_model(raw: str) -> str:
+    """``claude-fable-5-1`` → ``Fable 5.1``, ``gemini-3-flash`` → ``Gemini 3 Flash``.
+
+    Routing by family matters: sending everything through the Claude prettifier left Gemini
+    ids on screen exactly as the process was launched with them.
+    """
+    return _pretty_gemini_model(raw) if (raw or "").startswith("gemini") else _pretty_claude_model(raw)
 
 
 def _pretty_claude_model(raw: str) -> str:
@@ -379,6 +388,17 @@ def _pretty_gemini_model(raw: str) -> str:
     return " ".join(p if any(c.isdigit() for c in p) else p.capitalize() for p in s.split("-"))
 
 
+MODEL_ID_RE = re.compile(r"gemini-\d+(?:\.\d+)?-[a-z][a-z0-9.\-]*"
+                         r"|claude-(?:opus|sonnet|haiku|fable)-[0-9][0-9-]*")
+
+
+def _model_like(s: str) -> str | None:
+    """The model id inside a blob, or None. A version must follow the family name — without
+    that, `gemini-backup` and `gemini-20260425-144749` were both read as models."""
+    m = MODEL_ID_RE.search(s or "")
+    return m.group(0) if m else None
+
+
 def _antigravity_model_from_db(sid: str | None) -> str | None:
     """The model a specific Antigravity conversation ran, from its SQLite store (gen_metadata).
     Works even before the global model is set in settings.json."""
@@ -387,15 +407,22 @@ def _antigravity_model_from_db(sid: str | None) -> str | None:
     db = _antigravity_base() / "conversations" / f"{sid}.db"
     if not db.exists():
         return None
-    try:
-        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-        ids: list[str] = []
-        for (v,) in con.execute("SELECT data FROM gen_metadata ORDER BY idx DESC LIMIT 5"):
-            s = v.decode("utf-8", "ignore") if isinstance(v, (bytes, bytearray)) else str(v)
-            ids += re.findall(r"gemini-[a-z0-9.\-]+|claude-[a-z]+-[0-9-]+", s)
-        con.close()
-    except sqlite3.Error:
-        return None
+    ids: list[str] = []
+    # A live conversation store is in WAL mode, and `mode=ro` still needs to create the -shm
+    # sidecar — which fails, so the lookup silently returned nothing for every RUNNING agent
+    # (the only kind we ever ask about). `immutable=1` reads the main file without that.
+    for uri in (f"file:{db}?mode=ro", f"file:{db}?immutable=1"):
+        try:
+            con = sqlite3.connect(uri, uri=True)
+            for (v,) in con.execute("SELECT data FROM gen_metadata ORDER BY idx DESC LIMIT 5"):
+                s = v.decode("utf-8", "ignore") if isinstance(v, (bytes, bytearray)) else str(v)
+                # A version must follow the family name, otherwise unrelated strings in the
+                # blob match: `gemini-backup` and `gemini-20260425-144749` both did.
+                ids += MODEL_ID_RE.findall(s)
+            con.close()
+            break
+        except sqlite3.Error:
+            continue
     if not ids:
         return None
     raw = ids[0]
@@ -430,6 +457,18 @@ def open_files(pids: list) -> list[str]:
                 if line.startswith("n/"):
                     out.append(line[1:])
     return out
+
+
+def antigravity_label(settings_model: str | None, sid: str | None, cmds: list[str],
+                      fallback: str) -> str:
+    """The model tag for an Antigravity row — the SINGLE place that decides it.
+
+    Order: the globally selected model, then the conversation's own store (which is why this
+    runs AFTER the id is resolved — asking with no id was the reason a fresh agy stayed
+    unlabelled even once its id showed up), then `--model` on argv, then the kind name.
+    """
+    return (settings_model or _antigravity_model_from_db(sid)
+            or _model_from_argv(cmds) or fallback)
 
 
 def antigravity_sid(mapped: str | None, pids: list) -> str | None:
@@ -474,7 +513,10 @@ def _antigravity_info_for_cwd(cwd: str) -> tuple[str | None, str | None]:
         model = d.get("model") or None
     except (OSError, ValueError):
         pass
-    return sid, model or _antigravity_model_from_db(sid)
+    # The DB lookup deliberately does NOT happen here: it needs the conversation id, and at
+    # this point we may not have one yet (the workspace map is empty for a young session).
+    # antigravity_label() retries it once the id is known — from the presence lock if need be.
+    return sid, model
 
 
 def _classify(cmds: list[str], extra_matches: list[tuple]) -> tuple[str, str, str | None]:
@@ -623,7 +665,7 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
             asid, amodel = _antigravity_info_for_cwd(cwd) if cwd else (None, None)
             if sid is None:
                 sid = antigravity_sid(asid, tree)
-            label = amodel or _model_from_argv(ranked) or label
+            label = antigravity_label(amodel, sid, ranked, label)
         age = int(now - s["created"]) if s["created"] else None
         resume = RESUME_TEMPLATES.get(kind, "").format(id=sid) if (sid and kind in RESUME_TEMPLATES) else None
         if sid:
