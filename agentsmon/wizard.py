@@ -6,6 +6,8 @@ config, and installs the boot service. Designed to need almost no typing.
 """
 from __future__ import annotations
 
+import json
+import os
 import re
 import shutil
 import subprocess
@@ -42,6 +44,66 @@ AGENT_TYPES = [
     {"kind": "aider", "label": "Aider", "bin": "aider", "launch": "aider", "restart": "aider"},
     {"kind": "gemini", "label": "Gemini", "bin": "gemini", "launch": "gemini", "restart": "gemini"},
 ]
+
+
+def pretrust_claude(cwd: str, home: Path | None = None) -> str:
+    """Answer Claude Code's first-run prompts up front. Returns what was recorded, "" if nothing.
+
+    Claude Code asks "Is this a project you created or one you trust?" the first time it runs in a
+    directory, and waits for an answer. Launched detached into tmux there is nobody to answer: the
+    agent never starts, writes no session, and the dashboard stays empty — it looks like the tool
+    failed to add it (2026-09-03, on a freshly installed server). Sending the greeting afterwards
+    doesn't reliably save it either, because the keys land before the TUI is up.
+
+    The user has just named this directory for an agent they are creating, so recording that trust
+    is what they asked for — but it IS a security prompt, so `new()` says out loud that it did it.
+    Written atomically: a half-written config would lock the user out of Claude entirely.
+    """
+    p = (home or Path.home()) / ".claude.json"
+    try:
+        d = json.loads(p.read_text("utf-8")) if p.exists() else {}
+    except (OSError, ValueError):
+        return ""                      # unreadable or not JSON — never overwrite what we can't read
+    if not isinstance(d, dict):
+        return ""
+    zapsano = []
+    if not d.get("hasCompletedOnboarding"):
+        d["hasCompletedOnboarding"] = True
+        zapsano.append("onboarding")
+    projekty = d.setdefault("projects", {})
+    projekt = projekty.setdefault(cwd, {})
+    if not projekt.get("hasTrustDialogAccepted"):
+        projekt["hasTrustDialogAccepted"] = True
+        zapsano.append(f"trusted folder {cwd}")
+    if not zapsano:
+        return ""
+    tmp = p.with_name(p.name + ".agentsmon-tmp")
+    try:
+        tmp.write_text(json.dumps(d, indent=2), "utf-8")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, p)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        return ""
+    return " + ".join(zapsano)
+
+
+def wait_for_tui(name: str, timeout: float = 25.0) -> bool:
+    """Wait until the tmux pane runs something other than a shell — i.e. the agent TUI is up.
+
+    The greeting used to be sent after a flat 4 s. On a slow or cold machine the TUI isn't up yet,
+    the keys go nowhere, and the agent registers neither session id nor model until the user types
+    something themselves."""
+    import time
+    shells = {"sh", "bash", "zsh", "fish", "dash", "-sh", "-bash", "-zsh"}
+    konec = time.monotonic() + timeout
+    while time.monotonic() < konec:
+        r = subprocess.run(["tmux", "display-message", "-p", "-t", name, "#{pane_current_command}"],
+                           capture_output=True, text=True)
+        if r.returncode == 0 and r.stdout.strip() and r.stdout.strip() not in shells:
+            return True
+        time.sleep(0.5)
+    return False
 
 
 def _auto_restart(a: dict) -> str:
@@ -380,6 +442,13 @@ def new() -> int:
 
     cwd = str(Path(_ask("Working directory", str(Path.home()))).expanduser())
 
+    # Answer Claude's first-run prompts BEFORE launching, or the agent sits on the trust dialog
+    # forever and never appears anywhere.
+    if chosen["kind"] == "claude-code":
+        zapsano = pretrust_claude(cwd)
+        if zapsano:
+            print(f"  ✓ pre-answered Claude's first-run prompt ({zapsano})")
+
     # Create the session detached and launch the agent inside it.
     mk = subprocess.run(["tmux", "new-session", "-d", "-s", name, "-c", cwd], capture_output=True, text=True)
     if mk.returncode != 0:
@@ -395,11 +464,10 @@ def new() -> int:
     print(f"\n✓ Created '{name}' ({chosen['label']}), launched in tmux, and added to monitoring.")
     service.install()
     # Kick off a first turn so the agent registers its session id + model right away — a brand-new
-    # session shows neither until its first message. Give the TUI a moment to come up, then send a
-    # short greeting. Best-effort: if a one-time onboarding screen shows instead, the first real
-    # message you send registers it anyway.
-    import time
-    time.sleep(4)
+    # session shows neither until its first message. Wait for the TUI to actually come up first;
+    # a flat sleep sent the keys into a shell on a cold machine and nothing registered.
+    if not wait_for_tui(name):
+        print("  ! the agent TUI didn't come up in time — send it a first message yourself")
     subprocess.run(["tmux", "send-keys", "-t", name, "Hello! Briefly introduce yourself.", "Enter"],
                    capture_output=True)
     import shlex
