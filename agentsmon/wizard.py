@@ -75,17 +75,55 @@ def pretrust_claude(cwd: str, home: Path | None = None) -> str:
     if not projekt.get("hasTrustDialogAccepted"):
         projekt["hasTrustDialogAccepted"] = True
         zapsano.append(f"trusted folder {cwd}")
-    if not zapsano:
+    if zapsano and not _zapis_json(p, d):
         return ""
+    zapsano += _skip_bypass_warning(home or Path.home())
+    return " + ".join(zapsano)
+
+
+def _zapis_json(p: Path, data: dict) -> bool:
+    """Atomic, owner-only write. A half-written config would lock the user out of Claude."""
     tmp = p.with_name(p.name + ".agentsmon-tmp")
     try:
-        tmp.write_text(json.dumps(d, indent=2), "utf-8")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(data, indent=2), "utf-8")
         os.chmod(tmp, 0o600)
         os.replace(tmp, p)
+        return True
     except OSError:
         tmp.unlink(missing_ok=True)
-        return ""
-    return " + ".join(zapsano)
+        return False
+
+
+def _skip_bypass_warning(home: Path) -> list[str]:
+    """Third first-run gate. `--dangerously-skip-permissions` prints a WARNING screen whose
+    highlighted option is "No, exit", and waits. It is recorded in ~/.claude/settings.json, NOT
+    in ~/.claude.json, so answering the trust dialog alone still leaves the agent stuck on a
+    brand-new machine — measured on a pristine HOME, 2026-09-03.
+
+    Every agent this wizard launches runs in that mode; the user chose that by creating the
+    agent, and `new` prints what was recorded."""
+    p = home / ".claude" / "settings.json"
+    try:
+        d = json.loads(p.read_text("utf-8")) if p.exists() else {}
+    except (OSError, ValueError):
+        return []                      # unreadable or not JSON — never overwrite what we can't read
+    if not isinstance(d, dict) or d.get("skipDangerousModePermissionPrompt"):
+        return []
+    d["skipDangerousModePermissionPrompt"] = True
+    return ["bypass-mode warning"] if _zapis_json(p, d) else []
+
+
+def claude_is_logged_in(home: Path | None = None) -> bool:
+    """Best-effort: does Claude Code have credentials to work with?
+
+    The one first-run gate that CANNOT be pre-answered is the login — and it must not be, it is
+    authentication. A fresh agent then starts fine but sits at "Not logged in · Run /login" and
+    does nothing, which looks exactly like a broken tool. Saying so out loud beats a silent
+    half-success. Env-var auth counts; a false "logged in" only costs us the hint."""
+    if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+        return True
+    return ((home or Path.home()) / ".claude" / ".credentials.json").exists()
 
 
 def wait_for_tui(name: str, timeout: float = 25.0) -> bool:
@@ -447,7 +485,10 @@ def new() -> int:
     if chosen["kind"] == "claude-code":
         zapsano = pretrust_claude(cwd)
         if zapsano:
-            print(f"  ✓ pre-answered Claude's first-run prompt ({zapsano})")
+            print(f"  ✓ pre-answered Claude's first-run prompts ({zapsano})")
+        if not claude_is_logged_in():
+            print("  ! Claude is not logged in yet — the agent will start but can't work.")
+            print(f"    Log in once:  tmux attach -t {name}   then  /login")
 
     # Create the session detached and launch the agent inside it.
     mk = subprocess.run(["tmux", "new-session", "-d", "-s", name, "-c", cwd], capture_output=True, text=True)
