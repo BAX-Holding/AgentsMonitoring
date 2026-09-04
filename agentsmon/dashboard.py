@@ -86,7 +86,7 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
       <div class="rounded-lg border border-slate-200 bg-white p-3">
         <p class="text-[11px] uppercase tracking-wide text-slate-400">Uptime</p>
         <p class="m-uptime text-lg font-semibold mt-0.5">–</p>
-        <p class="text-[11px] text-slate-400">current streak</p>
+        <p class="text-[11px] text-slate-400">≥99% operational</p>
       </div>
       <div class="rounded-lg border border-slate-200 bg-white p-3">
         <p class="text-[11px] uppercase tracking-wide text-slate-400">Availability</p>
@@ -137,7 +137,7 @@ function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","
 const q=(r,s)=>r.querySelector(s);
 
 function renderTimeline(root, buckets, windowDays){
-  const tl=q(root,".svc-timeline"); tl.innerHTML=""; const GREEN=99;
+  const tl=q(root,".svc-timeline"); tl.innerHTML=""; const GREEN=98;
   buckets.forEach(b=>{
     const el=document.createElement("div"); let cls,status;
     if(b.uptime_pct==null){cls="bg-slate-200";status="no data";}
@@ -155,7 +155,7 @@ function renderService(root, s){
   q(root,".svc-head").className="svc-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 "+st[3];
   q(root,".svc-dot").className="svc-dot h-3 w-3 rounded-full shrink-0 "+st[0];
   const se=q(root,".svc-state"); se.textContent=st[1]; se.className="svc-state ml-auto text-sm font-medium "+st[2];
-  q(root,".m-uptime").textContent=fmtDuration(s.uptime_seconds);
+  {const gd=(s.timeline||[]).filter(b=>b.uptime_pct!=null&&b.uptime_pct>=98).length;q(root,".m-uptime").textContent=gd+(gd===1?" day":" days");}
   q(root,".m-sla").textContent=s.sla!=null?s.sla.toFixed(2)+" %":"–";
   q(root,".m-sla-sub").textContent="over "+s.sla_window_days+" days ("+(s.sla_samples||0)+" samples)";
   if(s.metric==="agents"){
@@ -310,7 +310,8 @@ def _service_state(cfg: dict, running_agents: int = 0) -> list[dict]:
             "avg_latency_ms": (lambda a: round(a * 1000) if a is not None else None)(db.avg_latency(name, win_days * 86400)),
             "health_url": s.get("health_url"),
             "metric": metric, "metric_value": running_agents if metric == "agents" else None,
-            "metric_sub": s.get("latency_label", "health check"),
+            "metric_sub": s.get("latency_label", "module" if s.get("command") else "health check"),
+            "source": s.get("source", "config"),
             "uptime_seconds": db.uptime_seconds(name, min_outage),
             "sla": sla_pct, "sla_window_days": win_days, "sla_samples": samples,
             "timeline": db.timeline(name, tdays * 86400, tdays), "timeline_days": tdays,
