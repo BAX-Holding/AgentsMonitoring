@@ -88,6 +88,32 @@ class ModuleSamples(unittest.TestCase):
             cur = db.last("M")
             self.assertTrue(cur["up"]); self.assertEqual(cur["latency"], 0.04); self.assertEqual(cur["detail"], "tailscale=up")
 
+    def test_system_card_flags_a_keepalive_that_stopped_passing(self):
+        """Mutation: drop the heartbeat check from ``_system_health`` → a dead supervisor is invisible."""
+        from agentsmon import keepalive
+        p = keepalive.heartbeat_path()
+        cfg = {"agents": [], "daemons": [], "pinned_daemons": [], "services": [],
+               "probe": {"interval_seconds": 60}, "keepalive": {"enabled": True, "interval_seconds": 60}}
+        p.write_text(str(int(time.time())), "utf-8")
+        os.utime(p, (time.time() - 3600, time.time() - 3600))       # last pass an hour ago
+        up, _, detail = probe._system_health(cfg)
+        self.assertFalse(up); self.assertIn("keepalive", detail)
+        p.write_text(str(int(time.time())), "utf-8")                    # fresh pass → fine again
+        up, _, _ = probe._system_health(cfg)
+        self.assertTrue(up)
+        cfg["keepalive"]["enabled"] = False                             # disabled → not judged
+        os.utime(p, (time.time() - 3600, time.time() - 3600))
+        self.assertTrue(probe._system_health(cfg)[0])
+
+    def test_command_detail_leads_and_process_is_mentioned_only_when_down(self):
+        with tempfile.TemporaryDirectory() as d:
+            _exe(Path(d) / "m.sh", "#!/bin/sh\necho 'Master=up Sol=up'\n")
+            cfg = {"services": [{"name": "Bridge X", "process": "definitely-not-running-zzz", "command": str(Path(d) / "m.sh")}],
+                   "probe": {"interval_seconds": 60}}
+            probe.probe_once(cfg)
+            cur = db.last("Bridge X")
+            self.assertFalse(cur["up"]); self.assertEqual(cur["detail"], "Master=up Sol=up proc=down")
+
     def test_system_card_uses_the_latest_sample_instead_of_rerunning_the_module(self):
         """Mutation: remove the ``command`` branch in ``_system_health`` → the module is treated
         like a process pattern (none) and counts as up even when its last sample says down."""

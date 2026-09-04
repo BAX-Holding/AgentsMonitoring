@@ -138,6 +138,19 @@ def _system_health(cfg: dict) -> tuple[bool, float | None, str]:
             if pat and not _proc_up(pat):
                 down.append(name)
 
+    # The supervisor itself. A keepalive that silently stopped is a system outage in waiting:
+    # nothing would revive the next dead agent. Judged by its heartbeat (stamped every pass).
+    ka = cfg.get("keepalive", {})
+    if ka.get("enabled", True):
+        from . import keepalive as _keepalive
+        try:
+            age = time.time() - _keepalive.heartbeat_path().stat().st_mtime
+        except OSError:
+            age = None
+        limit = 3 * int(ka.get("interval_seconds", 60)) + 30
+        if age is None or age > limit:
+            down.append("keepalive (no pass in %s)" % ("a while" if age is None else f"{int(age)}s"))
+
     uniq: list[str] = []
     for n in down:
         if n not in uniq:
@@ -166,6 +179,9 @@ def probe_once(cfg: dict) -> None:
         if s.get("command"):
             cmd_ok, cmd_lat, cmd_detail = _command(s["command"], float(s.get("timeout_seconds", 15)))
             ok = ok and cmd_ok
-            lat = cmd_lat if cmd_lat is not None else lat
-            detail = cmd_detail if not (s.get("process") or s.get("health_url")) else f"{detail} cmd={cmd_detail}"
+            lat = lat if lat is not None else cmd_lat
+            # The command's own words lead; process/HTTP are mentioned only when they fail.
+            extra = [x for x, bad in (("proc=down", s.get("process") and not proc),
+                                      ("http=down", s.get("health_url") and lat is None and not ok)) if bad]
+            detail = " ".join([cmd_detail] + extra)
         db.record(name, ok, lat, detail)
