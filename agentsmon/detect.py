@@ -275,7 +275,12 @@ def prettify_model(raw: str) -> str:
     Routing by family matters: sending everything through the Claude prettifier left Gemini
     ids on screen exactly as the process was launched with them.
     """
-    return _pretty_gemini_model(raw) if (raw or "").startswith("gemini") else _pretty_claude_model(raw)
+    r = raw or ""
+    if r.startswith("gemini"):
+        return _pretty_gemini_model(r)
+    if r.split("/")[-1][:3].lower() in ("gpt", "o1-", "o3-", "o4-") or re.match(r"o\d", r):
+        return _pretty_model(r)                  # Codex launched with --model gpt-6-astra
+    return _pretty_claude_model(r)
 
 
 def _pretty_claude_model(raw: str) -> str:
@@ -536,9 +541,24 @@ def _classify(cmds: list[str], extra_matches: list[tuple]) -> tuple[str, str, st
 
 
 def _pretty_model(raw: str) -> str:
-    """'openai/gpt-5.5' → 'GPT-5.5'; leaves other model names readable."""
-    raw = raw.split("/")[-1]
-    return raw.upper() if raw[:1].lower() in ("g", "o") else raw
+    """OpenAI ids the way Claude's already read: ``gpt-6-astra`` → ``GPT-6 Astra``,
+    ``openai/gpt-5.6-sol`` → ``GPT-5.6 Sol``, ``gpt-5.5`` → ``GPT-5.5``, ``o3-mini`` → ``O3 Mini``.
+
+    Upper-casing the whole id (``GPT-6-ASTRA``) put a shouting tag next to ``Fable 5.1``
+    (Petr, 2026-09-04). Family stays upper-case, the version keeps its dash, the codename
+    after it becomes a capitalised word. Anything that is not an OpenAI id is left alone.
+    """
+    raw = (raw or "").split("/")[-1]
+    if raw[:1].lower() not in ("g", "o"):
+        return raw
+    parts = raw.split("-")
+    label = parts[0].upper()
+    rest = parts[1:]
+    if rest and rest[0][:1].isdigit():          # version glued to the family: GPT-5.6, GPT-4o
+        label += "-" + rest[0]
+        rest = rest[1:]
+    words = [w.capitalize() if w[:1].isalpha() else w for w in rest]
+    return " ".join([label] + words)
 
 
 def _codex_model() -> str | None:
