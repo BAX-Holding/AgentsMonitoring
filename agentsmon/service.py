@@ -48,8 +48,13 @@ export AGENTSMON_CONFIG="{config.DEFAULT_PATH}"
 export AGENTSMON_STATE="{config.state_dir()}"
 PY="{_python()}"
 mkdir -p "{state}"
-pgrep -f "agentsmon dashboard" >/dev/null 2>&1 || \\
+# Guard on the dashboard's own pidfile (a plain `pgrep -f "agentsmon dashboard"` also matched any
+# shell whose command line mentioned the dashboard, and then nothing was started — 2026-09-04).
+PIDFILE="{state}/dashboard.pid"
+if ! ( [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null ) \\
+   && ! pgrep -f -- "-m agentsmon dashboard$" >/dev/null 2>&1; then
   nohup "$PY" -m agentsmon dashboard >> "{log}" 2>&1 &
+fi
 "$PY" -m agentsmon keepalive >> "{log}" 2>&1
 """, encoding="utf-8")
     path.chmod(0o755)
