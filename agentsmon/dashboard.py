@@ -533,4 +533,19 @@ def serve(host: str, port: int) -> None:
             self.wfile.write(body)
 
     print(f"Agents Monitoring dashboard → http://{host}:{port}  (Ctrl-C to stop)")
+    write_pidfile()
     ThreadingHTTPServer((host, port), Handler).serve_forever()
+
+
+def pidfile_path():
+    return config.state_dir() / "dashboard.pid"
+
+
+def write_pidfile() -> None:
+    """Record our PID so the installer can stop exactly this process. It used to
+    ``pkill -f "agentsmon dashboard"``, which also killed any shell whose command line merely
+    mentioned that string — including the script that was running the install (2026-09-04)."""
+    try:
+        pidfile_path().write_text(str(os.getpid()), encoding="utf-8")
+    except OSError:
+        pass

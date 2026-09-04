@@ -8,6 +8,7 @@ by pgrep) and runs one keepalive pass works everywhere, no login session require
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -55,6 +56,56 @@ pgrep -f "agentsmon dashboard" >/dev/null 2>&1 || \\
     return path
 
 
+def _dashboard_pids() -> list[int]:
+    """The running dashboard's PID(s): the pidfile it writes on start, else a pattern that only
+    matches the dashboard's own command line (``-m agentsmon dashboard``). A bare
+    ``pkill -f "agentsmon dashboard"`` also killed any shell script whose text mentioned the
+    dashboard — the very script driving the install (2026-09-04)."""
+    from . import dashboard as _dash
+    pids: list[int] = []
+    try:
+        pid = int(_dash.pidfile_path().read_text("utf-8").strip())
+        os.kill(pid, 0)                              # still alive?
+        pids.append(pid)
+    except (OSError, ValueError):
+        pass
+    if not pids:
+        out = subprocess.run(["pgrep", "-f", r"-m agentsmon dashboard$"], capture_output=True, text=True).stdout
+        pids = [int(x) for x in out.split() if x.isdigit() and int(x) != os.getpid()]
+    return pids
+
+
+def stop_dashboard(wait: float = 8.0) -> None:
+    """Stop the running dashboard and WAIT until it is gone (port freed) before relaunching.
+    Otherwise the launcher's guard still sees the dying process, or the new one hits "address
+    already in use" — either way the STALE pre-config dashboard keeps serving."""
+    import signal
+    pids = _dashboard_pids()
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    deadline = time.time() + wait
+    while pids and time.time() < deadline:
+        pids = [p for p in pids if _alive(p)]
+        if pids and time.time() > deadline - wait / 2:
+            for pid in pids:
+                try:
+                    os.kill(pid, signal.SIGKILL)  # stubborn → escalate
+                except OSError:
+                    pass
+        time.sleep(0.3)
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
 def install() -> int:
     if not shutil.which("cron") and not shutil.which("crontab"):
         print("⚠️  crontab not found. Run these yourself under any process manager:")
@@ -78,20 +129,7 @@ def install() -> int:
     # (host/port/auth). Without this, a re-run can't change a live dashboard — its pgrep guard
     # would just leave the stale one bound to the old address. (Safe: our own process is
     # "agentsmon setup/service", not "agentsmon dashboard".)
-    if shutil.which("pkill"):
-        subprocess.run(["pkill", "-f", "agentsmon dashboard"], capture_output=True)
-        # WAIT until the old dashboard is actually gone (and its port freed) before relaunching.
-        # Otherwise the launcher's pgrep guard still sees the dying process (so it skips starting a
-        # fresh one), or the new one hits "address already in use" and exits — either way the STALE
-        # pre-config dashboard keeps serving and changes like HTTP auth never take effect.
-        for i in range(25):
-            gone = subprocess.run(["pgrep", "-f", "agentsmon dashboard"],
-                                  capture_output=True).returncode != 0
-            if gone:
-                break
-            if i == 15:                       # stubborn → escalate to SIGKILL
-                subprocess.run(["pkill", "-9", "-f", "agentsmon dashboard"], capture_output=True)
-            time.sleep(0.3)
+    stop_dashboard()
     # Kick it once now so the dashboard comes up immediately on the configured host.
     subprocess.run(["sh", str(launcher)], capture_output=True)
     print("  ✓ installed cron launcher (@reboot + every minute) — survives logout/reboot.")
