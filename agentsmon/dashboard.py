@@ -54,7 +54,9 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
       <span class="svc-dot h-3 w-3 rounded-full bg-slate-300 shrink-0"></span>
       <h2 class="text-base font-semibold">Persistent Agents</h2>
       <span class="agents-count ml-auto text-sm font-medium text-slate-400">loading…</span>
+      <span class="svc-chev text-slate-400 text-xs ml-2 select-none" title="collapse / expand">▾</span>
     </div>
+    <div class="svc-body">
     <div class="rounded-lg border border-slate-200 bg-white overflow-x-auto">
       <table class="w-full text-sm"><thead>
         <tr class="text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
@@ -69,6 +71,7 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
       </table>
     </div>
     <p class="text-[11px] text-slate-400 mt-2">tmux sessions running an agent, linked by their <code>--resume</code> session id</p>
+    </div>
   </section>
 
   <div id="services"></div>
@@ -81,12 +84,14 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
       <span class="svc-dot h-3 w-3 rounded-full bg-slate-300 shrink-0"></span>
       <h2 class="svc-name text-base font-semibold"></h2>
       <span class="svc-state ml-auto text-sm font-medium text-slate-400">loading…</span>
+      <span class="svc-chev text-slate-400 text-xs ml-2 select-none" title="collapse / expand">▾</span>
     </div>
+    <div class="svc-body">
     <div class="grid grid-cols-3 gap-3 mb-3">
       <div class="rounded-lg border border-slate-200 bg-white p-3">
         <p class="text-[11px] uppercase tracking-wide text-slate-400">Uptime</p>
         <p class="m-uptime text-lg font-semibold mt-0.5">–</p>
-        <p class="text-[11px] text-slate-400">≥99% operational</p>
+        <p class="text-[11px] text-slate-400">days ≥98% operational</p>
       </div>
       <div class="rounded-lg border border-slate-200 bg-white p-3">
         <p class="text-[11px] uppercase tracking-wide text-slate-400">Availability</p>
@@ -114,6 +119,7 @@ PAGE = r"""<!DOCTYPE html><html lang="en"><head>
         </div>
         <span>now</span>
       </div>
+    </div>
     </div>
   </section>
 </template>
@@ -152,7 +158,7 @@ function renderTimeline(root, buckets, windowDays){
 }
 function renderService(root, s){
   const st=STATE[s.state]||STATE.nodata;
-  q(root,".svc-head").className="svc-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 "+st[3];
+  q(root,".svc-head").className="svc-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 cursor-pointer "+st[3];
   q(root,".svc-dot").className="svc-dot h-3 w-3 rounded-full shrink-0 "+st[0];
   const se=q(root,".svc-state"); se.textContent=st[1]; se.className="svc-state ml-auto text-sm font-medium "+st[2];
   {const gd=(s.timeline||[]).filter(b=>b.uptime_pct!=null&&b.uptime_pct>=98).length;q(root,".m-uptime").textContent=gd+(gd===1?" day":" days");}
@@ -180,7 +186,7 @@ function renderService(root, s){
 function renderAgents(root, agents){
   const tb=document.getElementById("agents-rows");
   const on=agents.some(a=>a.alive); const running=agents.filter(a=>a.alive).length;
-  q(root,".svc-head").className="svc-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 "+(on?"bg-emerald-50 border-emerald-200":"bg-white border-slate-200");
+  q(root,".svc-head").className="svc-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 cursor-pointer "+(on?"bg-emerald-50 border-emerald-200":"bg-white border-slate-200");
   q(root,".svc-dot").className="svc-dot h-3 w-3 rounded-full shrink-0 "+(on?"bg-emerald-500":"bg-slate-300");
   const cnt=q(root,".agents-count");
   cnt.textContent=running?`${running} agent${running===1?"":"s"} running`:"no agents running";
@@ -232,16 +238,37 @@ function renderAgents(root, agents){
     tb.appendChild(tr);
   });
 }
+// Collapsible blocks. The first OPEN_BY_DEFAULT blocks (agents table + the first service cards)
+// start expanded, the rest fold to their header line; a click on any header toggles it and the
+// choice is remembered per block in localStorage (a long list of modules stays scannable).
+const OPEN_BY_DEFAULT=3;
+const collapseKey=n=>"agentsmon.collapsed:"+n;
+function setCollapsed(root,collapsed,persist){
+  const b=q(root,".svc-body"),c=q(root,".svc-chev"); if(!b) return;
+  b.hidden=collapsed; if(c) c.textContent=collapsed?"▸":"▾"; root.dataset.collapsed=collapsed?"1":"0";
+  if(persist){ try{ localStorage.setItem(collapseKey(root.dataset.cname||""),collapsed?"1":"0"); }catch(e){} }
+}
+function initCollapse(root,name,index){
+  if(root.dataset.cname===name) return;
+  root.dataset.cname=name; let v=null; try{ v=localStorage.getItem(collapseKey(name)); }catch(e){}
+  setCollapsed(root, v==null ? index>=OPEN_BY_DEFAULT : v==="1", false);
+}
+document.addEventListener("click",e=>{
+  const h=e.target.closest(".svc-head"); if(!h||e.target.closest("a,button")) return;
+  const root=h.closest("section"); if(!root) return;
+  setCollapsed(root, root.dataset.collapsed!=="1", true);
+});
 async function refresh(){
   try{
     const d=await (await fetch("/api/state",{credentials:"same-origin"})).json();
-    renderAgents(document.querySelector('section[data-svc="agents"]'), d.agents);
+    const agentsRoot=document.querySelector('section[data-svc="agents"]');
+    renderAgents(agentsRoot, d.agents); initCollapse(agentsRoot,"agents",0);
     const box=document.getElementById("services"); const tpl=document.getElementById("svc-tpl");
     if(box.childElementCount!==d.services.length){
       box.innerHTML=""; d.services.forEach(()=>box.appendChild(tpl.content.cloneNode(true)));
     }
     const sections=box.querySelectorAll("section");
-    d.services.forEach((s,i)=>{ const root=sections[i]; q(root,".svc-name").textContent=s.name; renderService(root,s); });
+    d.services.forEach((s,i)=>{ const root=sections[i]; q(root,".svc-name").textContent=s.name; renderService(root,s); initCollapse(root,s.name,i+1); });
     document.getElementById("footer").textContent="updated "+new Date().toLocaleTimeString()+" · auto-refresh";
   }catch(e){document.getElementById("footer").textContent="connection lost…";}
 }
