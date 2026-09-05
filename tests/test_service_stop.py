@@ -28,3 +28,13 @@ class StopDashboard(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ActionCsrf(unittest.TestCase):
+    """A cross-site form cannot set a custom header; the dashboard page always does (2026-09-05)."""
+    def test_action_requires_the_page_header(self):
+        from agentsmon import dashboard as d
+        self.assertTrue(d._action_allowed({"X-Agentsmon": "action"}))
+        self.assertTrue(d._action_allowed({"X-Agentsmon": " Action "}))
+        self.assertFalse(d._action_allowed({}))
+        self.assertFalse(d._action_allowed({"X-Agentsmon": "yes"}))

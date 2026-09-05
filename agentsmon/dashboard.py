@@ -28,6 +28,17 @@ def password_hash(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
+def _action_allowed(headers) -> bool:
+    """A state-changing request must carry the ``X-Agentsmon`` header the page sets. A form or a
+    plain fetch from another site cannot add a custom header without a CORS preflight (which
+    this server never answers), so a page you happen to have open elsewhere cannot stop or
+    restart your agents behind your back — even with HTTP auth cached (audit 2026-09-05)."""
+    try:
+        return (headers.get("X-Agentsmon") or "").strip().lower() == "action"
+    except Exception:
+        return False
+
+
 def _auth_ok(header: str | None, user: str, pwhash: str) -> bool:
     if not header or not header.startswith("Basic "):
         return False
@@ -304,7 +315,7 @@ document.addEventListener("click", async e=>{
   showToast((act==="restart"?"↻ Restarting ":"✕ Stopping ")+name+"…");
   try{
     const r=await fetch("/api/agent/action",{method:"POST",credentials:"same-origin",
-      headers:{"Content-Type":"application/json"},body:JSON.stringify({name,action:act})});
+      headers:{"Content-Type":"application/json","X-Agentsmon":"action"},body:JSON.stringify({name,action:act})});
     const j=await r.json().catch(()=>({}));
     showToast((j&&j.ok?"✓ ":"⚠ ")+((j&&j.message)||(r.ok?"done":"failed")));
   }catch(err){ showToast("⚠ "+err); }
@@ -532,6 +543,14 @@ def serve(host: str, port: int) -> None:
             if parsed.path != "/api/agent/action":
                 self.send_response(404)
                 self.end_headers()
+                return
+            if not _action_allowed(self.headers):
+                body = json.dumps({"ok": False, "error": "missing X-Agentsmon header (cross-site request?)"}).encode()
+                self.send_response(403)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
                 return
             length = int(self.headers.get("Content-Length", 0) or 0)
             raw = self.rfile.read(length) if length else b""
