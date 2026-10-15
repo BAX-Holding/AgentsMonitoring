@@ -22,11 +22,13 @@ async def verify(args):
     shared={'name':'Example Agent','kind':'codex','vendor':'openai','label':'GPT-6 Astra',
             'alive':True,'age':3600,'session_id':sid,'account':'Fixture account','telegram_bot':'example_test_bot',
             'telegram_url':'https://t.me/example_test_bot'}
+    daemon={'name':'Example Gateway','kind':'daemon','vendor':'openai','label':'Example model',
+            'alive':True,'port':9999,'latency_ms':1,'status_detail':'Health endpoint OK','actions':False}
     extension={**shared,'id':'example','kind':'sandbox','plugin':'fixture','actions':False,
                'actions_locked':True,'tmux_session':'example','row_actions':[
                    {'id':'reload','icon':'restart','label':'Safe reload','confirm':'Reload fixture?'}]}
     table={'id':'fixture:team','title':'Example Team','rows':[extension],'up':True,'error':'','note':'Fixture'}
-    payload={'agents':[shared],'agent_tables':[table], 'columns':[], 'services':[],
+    payload={'agents':[shared,daemon],'agent_tables':[table], 'columns':[], 'services':[],
              'plugins':[],'plugin_errors':[], 'core':{'version':'0.3.0','state':'clean'},
              'sandbox_agents':{'enabled':True,'rows':[extension],'up':True,'stale':False,'age_s':1}}
     posts=[]
@@ -65,6 +67,39 @@ async def verify(args):
                 upper=page.locator('[data-svc="agents"]')
                 lower=page.locator('[data-svc="fixture:team"]')
                 await lower.locator('tbody td').first.wait_for()
+                await page.wait_for_timeout(350)
+                daemon_status=upper.locator('tbody tr').nth(1).locator('td').nth(4)
+                await page.screenshot(path=str(args.out/'daemon-status.png'),full_page=True)
+                assert await daemon_status.inner_text()=='Running',await daemon_status.inner_text()
+                assert 'latency 1 ms' in await daemon_status.get_attribute('title')
+                assert 'Health endpoint OK' in await daemon_status.get_attribute('title')
+                assert await upper.locator('tbody tr').first.locator('td').nth(4).inner_text()=='Running'
+                # Zero latency is still a valid observation; no observation invents no latency.
+                for latency,expected in ((0,'latency <1 ms'),(None,None)):
+                    daemon['latency_ms']=latency
+                    await page.evaluate('refresh()')
+                    assert await daemon_status.inner_text()=='Running'
+                    tooltip=await daemon_status.get_attribute('title')
+                    if expected:
+                        assert expected in tooltip,tooltip
+                    else:
+                        assert 'latency' not in tooltip,tooltip
+                # A stale latency must not disguise a down/timeout/error row as healthy.
+                daemon.update(alive=False,latency_ms=1,status_detail='Health endpoint failed')
+                for status in (None,'Down','Timeout','Error'):
+                    daemon['status']=status
+                    await page.evaluate('refresh()')
+                    assert await daemon_status.inner_text()==(status or 'Idle')
+                    assert await daemon_status.locator('.bg-emerald-500').count()==0
+                    assert 'Health endpoint failed' in await daemon_status.get_attribute('title')
+                await page.wait_for_timeout(350)
+                await page.screenshot(path=str(args.out/'daemon-error.png'),full_page=True)
+                # An explicit error from a provider retains precedence, even with alive=true.
+                daemon.update(alive=True,status='Error')
+                await page.evaluate('refresh()')
+                assert await daemon_status.inner_text()=='Error'
+                daemon.update(alive=True,status=None,latency_ms=1,status_detail='Health endpoint OK')
+                await page.evaluate('refresh()')
                 await page.wait_for_timeout(350)
                 same(await geometry(upper),await geometry(lower))
                 assert await upper.locator('thead').inner_text()==await lower.locator('thead').inner_text()
@@ -117,7 +152,7 @@ async def verify(args):
                     await page.evaluate('refresh()');await page.wait_for_timeout(350)
                     await page.screenshot(path=str(args.out/'private-plugin.png'),full_page=True)
                 assert not errors,errors
-                print('PASS: shared columns/layout, reference geometry, usage, action routing, error isolation, HTML escaping.')
+                print('PASS: daemon Running/latency tooltip, unhealthy statuses, shared columns/layout, reference geometry, usage, action routing, error isolation, HTML escaping.')
             finally: await browser.close()
     finally: server.shutdown();server.server_close();thread.join(2)
 

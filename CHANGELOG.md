@@ -18,6 +18,8 @@
 
 ### Fixes and community review
 
+- Healthy daemon/port agents show `Running`, matching tmux agents. Health-check latency
+  remains in the status tooltip; explicit error/down states retain precedence.
 - [Issue #4](https://github.com/petrludwig-collab/AgentsMonitoring/issues/4), reported by
   **jenicek001**: close SQLite uptime connections after transactions, including initialization
   failures. Also close Antigravity connections on query errors, reviewed against

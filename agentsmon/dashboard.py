@@ -281,10 +281,10 @@ function renderAgents(root, agents, summary=null, columns=[]){
       sid=`<span class="text-xs text-slate-300 cursor-help" title="${esc(tip)}">— none</span>`;
     }
     const ok=a.alive; const dot=ok?"bg-emerald-500":(a.plugin?"bg-rose-500":"bg-slate-300");
-    // A daemon with a health endpoint shows its latency in place of Running/Idle.
-    let statusTxt=(a.latency_ms!=null&&ok)?fmtLat(a.latency_ms):(ok?"Running":"Idle");
-    if(a.status) statusTxt=a.status;
-    const statusTip=a.status_detail||a.status||"";
+    // Health is the visible status for every agent; latency is supplementary detail.
+    const statusTxt=a.status||(ok?"Running":"Idle");
+    const statusTip=[a.status_detail||a.status,
+      ok&&a.latency_ms!=null?`latency ${fmtLat(a.latency_ms)}`:""].filter(Boolean).join(" · ");
     const stCls=ok?"text-slate-600":"text-slate-400";
     const tr=document.createElement("tr"); tr.className="border-b border-slate-100 last:border-0";
     const nameBg=NAME_BG[a.name_color];
