@@ -1,7 +1,6 @@
 """`agentsmon update` — pull the latest code and reload, without re-running setup."""
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -52,7 +51,7 @@ def run() -> int:
                             "--break-system-packages", "--upgrade", str(src)], capture_output=True)
     # Migrate the saved config to the current schema (e.g. fold old per-daemon availability cards
     # into the synthetic Multi-Agent System card) so existing installs upgrade cleanly.
-    from . import config, wizard
+    from . import config, service, wizard
     try:
         cfg = config.load()
         if wizard.migrate_config(cfg):
@@ -62,11 +61,13 @@ def run() -> int:
         print(f"(config migration skipped: {e})")
 
     # Reload the dashboard on the new code — restart it IMMEDIATELY (don't leave a gap until the
-    # next cron tick). Kill it, then kick the launcher so it comes straight back.
-    if shutil.which("pkill"):
-        subprocess.run(["pkill", "-f", "agentsmon dashboard"], capture_output=True)
+    # next cron tick). Stop only our dashboard, then refresh the installed launcher too:
+    # an old launcher may still use an unscoped process guard and mistake another user's
+    # dashboard for ours. Do not register cron or create a launcher for manual installs.
+    service.stop_dashboard()
     launcher = config.state_dir() / "agentsmon-launch.sh"
     if launcher.exists():
+        launcher = service._write_launcher()
         subprocess.run(["sh", str(launcher)], capture_output=True)
     print("✓ Updated and reloaded. Add new bots with:  agentsmon add")
     return 0

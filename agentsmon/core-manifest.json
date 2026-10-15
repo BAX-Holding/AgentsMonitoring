@@ -1,10 +1,10 @@
 {
-  "content_id": "de245d70b1df29048c78ee30f09b59a6686db79205e1ea446554d9ae2ca3a059",
+  "content_id": "ed2e0748baa360474491ac9d9022ee4c5ac8a88c24c8262b1cd71ff88a648887",
   "files": {
     "__init__.py": "b097ed64761ca3655907bd8cfcfcb90b77e847dc648c95f41193caed082ce6d3",
     "__main__.py": "57ed98fd45acf4852c17cdf37c205a433dc612f09bb13cdb5cadc5698437734e",
     "config.py": "b9deca85e19f7484cd41e2b378482025fd8c2666075e4cb69cfd0ff40171d332",
-    "dashboard.py": "7836220492fde21797a773dd6240afd3d49942a793dc244d6bde9c20d74b4560",
+    "dashboard.py": "e690ee257dc9d5267bca688a6786698462e004c6c929638df9e32eb9c11b35b7",
     "db.py": "470bafc161d24ac1bea302af0873ebf2e596a8ce77796cb29e79189bb2d1c5cf",
     "detect.py": "0744ee0014c5efee1ec96af90f2d8dd12fe18cc7e577445a81a3194590c7d118",
     "doctor.py": "031123e32eb89795144efce7cf17d10b286464eb470631bb1d6db74f72947730",
@@ -13,11 +13,11 @@
     "plugin_worker.py": "407c3054cfba3429b5f1c7cf28413d12a6b6a12eb0f49de9d23135c2daf4dedb",
     "plugins.py": "c19d57a77f72b1f50da274ccdcaadce9f8e379cff5e87d8ea63599d20f2c9e53",
     "probe.py": "89c803810394351a6dee1e5f85ed4784856cd98dc6f1782405b3ec4f8ab479f8",
-    "service.py": "c71d038a69ca3534bd4d9b5ff504e0bcf0662292b6f285f6df28a717049ecdb2",
+    "service.py": "4a6e55b04cc65a0992cb7fbe905e879fc8c1ba137909abef7ad5a841185a90bf",
     "static/tailwind.js": "176e894661aa9cdc9a5cba6c720044cbbf7b8bd80d1c9a142a7c24b1b6c50d15",
     "status.py": "93ec57cb9be2d6234cbaaf421844bb00a80a8d2883a8633225ab27a7410d5d85",
     "uninstaller.py": "3958e5b303236da4ba80a180301a6e97b1b5fb78264b7d04d4d5fbefc6fe073a",
-    "updater.py": "35e5c08cb14ddca8ea85428c8ae56883aa42402c1329602bb7951a83fa7e9090",
+    "updater.py": "485b3d71dbf234c81763ba902a0ad25986f1d0742370a7b60bd2c0fd88322890",
     "usage_plugin.py": "d30e2fd2ff35c486cabed7dc7913028fffddee4ab9a8cb9c9c3ecee83ca5c72a",
     "wizard.py": "c8c4881428626be2546fe88e0fe73d3ed96b9eb6112132a6a63caf4da55ffa9b"
   },

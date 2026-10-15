@@ -11,6 +11,24 @@ import urllib.request
 
 
 class CleanInstall(unittest.TestCase):
+    def test_install_without_controlling_terminal_finishes_successfully(self):
+        root=Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            env={'HOME':tmp,'PATH':str(Path(sys.executable).parent)+os.pathsep+os.defpath,
+                 'AGENTSMON_STATE':str(Path(tmp)/'state'),'AGENTSMON_CONFIG':str(Path(tmp)/'config.json')}
+            # setsid: even a developer running this test from a terminal cannot supply /dev/tty.
+            probe=subprocess.run(['sh','-c','{ : </dev/tty; } 2>/dev/null'],
+                                 stdin=subprocess.DEVNULL,start_new_session=True,capture_output=True)
+            self.assertNotEqual(probe.returncode,0,'Fixture unexpectedly has a controlling terminal')
+            run=subprocess.run(['bash',str(root/'install.sh'),'--no-pip'],cwd=root,env=env,
+                               stdin=subprocess.DEVNULL,start_new_session=True,capture_output=True,
+                               text=True,timeout=20)
+            self.assertEqual(run.returncode,0,run.stderr)
+            self.assertIn('Finish setup with: agentsmon setup',run.stdout)
+            self.assertNotIn('/dev/tty:',run.stderr)
+            self.assertFalse((Path(tmp)/'config.json').exists(),'Setup must not run without a terminal')
+            self.assertTrue((Path(tmp)/'.local/bin/agentsmon').is_file())
+
     def test_clean_home_installer_and_real_dashboard_without_plugins(self):
         root=Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as tmp:

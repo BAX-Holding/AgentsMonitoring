@@ -105,7 +105,7 @@ AGENT_TABLES
       <div class="rounded-lg border border-slate-200 bg-white p-3">
         <p class="text-[11px] uppercase tracking-wide text-slate-400">Uptime</p>
         <p class="m-uptime text-lg font-semibold mt-0.5">–</p>
-        <p class="text-[11px] text-slate-400">days ≥98% operational</p>
+        <p class="text-[11px] text-slate-400">since first check or last outage</p>
       </div>
       <div class="rounded-lg border border-slate-200 bg-white p-3">
         <p class="text-[11px] uppercase tracking-wide text-slate-400">Availability</p>
@@ -187,7 +187,7 @@ function renderService(root, s){
   q(root,".svc-head").className="svc-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 cursor-pointer "+st[3];
   q(root,".svc-dot").className="svc-dot h-3 w-3 rounded-full shrink-0 "+st[0];
   const se=q(root,".svc-state"); se.textContent=st[1]; se.className="svc-state ml-auto text-sm font-medium "+st[2];
-  {const gd=(s.timeline||[]).filter(b=>b.uptime_pct!=null&&b.uptime_pct>=98).length;q(root,".m-uptime").textContent=gd+(gd===1?" day":" days");}
+  q(root,".m-uptime").textContent=fmtDuration(s.uptime_seconds);
   q(root,".m-sla").textContent=s.sla!=null?s.sla.toFixed(2)+" %":"–";
   q(root,".m-sla-sub").textContent="over "+s.sla_window_days+" days ("+(s.sla_samples||0)+" samples)";
   if(s.metric==="agents"){
@@ -631,13 +631,13 @@ def _loopback(host: str) -> bool:
 def require_auth_or_die(host: str, cfg: dict) -> None:
     """Fail closed: a dashboard reachable from anything but loopback must have HTTP auth
     configured (audit 2026-09-08). Without it anyone on that network could stop or restart
-    agents. `agentsmon wizard` sets dashboard.auth; loopback-only installs stay optional."""
+    agents. `agentsmon setup` sets dashboard.auth; loopback-only installs stay optional."""
     auth = cfg.get("dashboard", {}).get("auth") or {}
     if _loopback(host) or (auth.get("user") and auth.get("pwhash")):
         return
     raise SystemExit(
         f"refusing to listen on {host} without dashboard.auth (user + pwhash) in the config — "
-        "the page can stop and restart agents. Bind 127.0.0.1 or set the password via `agentsmon wizard`."
+        "the page can stop and restart agents. Bind 127.0.0.1 or set the password via `agentsmon setup`."
     )
 
 

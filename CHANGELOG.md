@@ -18,6 +18,11 @@
 
 ### Fixes and community review
 
+- Headless installation without a controlling terminal succeeds and prints `agentsmon setup`.
+- Dashboard launcher and stop fallback are scoped to the current user. Updates stop via the
+  PID-aware service helper and regenerate an existing launcher instead of broad `pkill`.
+- Off-loopback auth errors point to `agentsmon setup`. Service uptime displays the observed
+  streak duration, not a count of healthy day buckets; tests reap their child processes.
 - Healthy daemon/port agents show `Running`, matching tmux agents. Health-check latency
   remains in the status tooltip; explicit error/down states retain precedence.
 - [Issue #4](https://github.com/petrludwig-collab/AgentsMonitoring/issues/4), reported by

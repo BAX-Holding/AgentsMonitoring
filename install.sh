@@ -109,5 +109,6 @@ case ":$PATH:" in
 esac
 
 say "Run it later with:  $HOW status   (add more bots anytime with:  $HOW add)"
-if [ "$NO_SETUP" -eq 0 ] && [ -e /dev/tty ]; then say "Starting setup…"; exec "${RUN[@]}" setup </dev/tty
-else say "Installed. Finish setup with:  $HOW setup"; fi
+if [ "$NO_SETUP" -eq 0 ] && { : </dev/tty; } 2>/dev/null; then
+  say "Starting setup…"; exec "${RUN[@]}" setup </dev/tty
+else say "Installed. Finish setup with: $HOW setup"; fi

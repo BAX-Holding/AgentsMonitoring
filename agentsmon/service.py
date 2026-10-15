@@ -52,7 +52,7 @@ mkdir -p "{state}"
 # shell whose command line mentioned the dashboard, and then nothing was started — 2026-09-04).
 PIDFILE="{state}/dashboard.pid"
 if ! ( [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null ) \\
-   && ! pgrep -f -- "-m agentsmon dashboard$" >/dev/null 2>&1; then
+   && ! pgrep -u "$(id -u)" -f -- "-m agentsmon dashboard$" >/dev/null 2>&1; then
   nohup "$PY" -m agentsmon dashboard >> "{log}" 2>&1 &
 fi
 "$PY" -m agentsmon keepalive >> "{log}" 2>&1
@@ -63,7 +63,7 @@ fi
 
 def _dashboard_pids() -> list[int]:
     """The running dashboard's PID(s): the pidfile it writes on start, else a pattern that only
-    matches the dashboard's own command line (``-m agentsmon dashboard``). A bare
+    matches this user's dashboard command line (``-m agentsmon dashboard``). A bare
     ``pkill -f "agentsmon dashboard"`` also killed any shell script whose text mentioned the
     dashboard — the very script driving the install (2026-09-04)."""
     from . import dashboard as _dash
@@ -75,7 +75,8 @@ def _dashboard_pids() -> list[int]:
     except (OSError, ValueError):
         pass
     if not pids:
-        out = subprocess.run(["pgrep", "-f", r"-m agentsmon dashboard$"], capture_output=True, text=True).stdout
+        out = subprocess.run(["pgrep", "-u", str(os.getuid()), "-f", "--", r"-m agentsmon dashboard$"],
+                             capture_output=True, text=True).stdout
         pids = [int(x) for x in out.split() if x.isdigit() and int(x) != os.getpid()]
     return pids
 

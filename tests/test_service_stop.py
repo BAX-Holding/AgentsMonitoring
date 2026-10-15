@@ -1,15 +1,36 @@
 """Stopping the dashboard must hit exactly the dashboard (2026-09-04): a bare
 ``pkill -f "agentsmon dashboard"`` also killed the shell script that mentioned it."""
-import os, subprocess, tempfile, time, unittest
+import os, subprocess, sys, tempfile, time, unittest
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("AGENTSMON_STATE", tempfile.mkdtemp(prefix="agentsmon-test-state-"))
 from agentsmon import dashboard, service  # noqa: E402
 
 
 class StopDashboard(unittest.TestCase):
+    def test_stop_fixture_reaps_both_children(self):
+        children=[]; real_popen=subprocess.Popen
+        def tracked(*args,**kwargs):
+            child=real_popen(*args,**kwargs)
+            child.wait=Mock(wraps=child.wait)
+            children.append(child)
+            return child
+        result=unittest.TestResult()
+        try:
+            with patch.object(subprocess,'Popen',side_effect=tracked):
+                StopDashboard('test_pidfile_process_is_stopped_and_a_bystander_mentioning_the_name_survives').run(result)
+            self.assertTrue(result.wasSuccessful(),result.errors+result.failures)
+            self.assertEqual(len(children),2)
+            for child in children:
+                self.assertTrue(child.wait.called,'Fixture killed a child without waiting for it')
+        finally:
+            for child in children:
+                if child.poll() is None: child.kill()
+                child.wait(timeout=5)
+
     def test_pidfile_process_is_stopped_and_a_bystander_mentioning_the_name_survives(self):
         victim = subprocess.Popen(["sleep", "30"])
-        bystander = subprocess.Popen(["sh", "-c", "echo agentsmon dashboard >/dev/null; sleep 30"])
+        bystander = subprocess.Popen([sys.executable, "-c", "import time; marker='agentsmon dashboard'; time.sleep(30)"])
         try:
             dashboard.pidfile_path().write_text(str(victim.pid), encoding="utf-8")
             service.stop_dashboard(wait=4)
@@ -20,6 +41,8 @@ class StopDashboard(unittest.TestCase):
             for p in (victim, bystander):
                 if p.poll() is None:
                     p.kill()
+                p.wait(timeout=5)
+            dashboard.pidfile_path().unlink(missing_ok=True)
 
     def test_write_pidfile_records_our_pid(self):
         dashboard.write_pidfile()

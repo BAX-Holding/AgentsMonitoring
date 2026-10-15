@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import sys
 import threading
+import time
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from agentsmon import dashboard
@@ -145,6 +146,26 @@ async def verify(args):
                 assert await lower.locator('img').count()==0
                 assert await page.evaluate('window.PWNED || null') is None
                 await page.screenshot(path=str(args.out/'failure-isolation.png'),full_page=True)
+                # Two healthy samples in a day are minutes of observed uptime, not a whole day.
+                extension.update(name='Example Agent',alive=True,status='Running',status_detail='Ready')
+                table.update(up=True,error='')
+                payload['plugin_errors']=[]
+                now=int(time.time())
+                fresh={'name':'Fresh service','state':'operational','uptime_seconds':120,
+                       'sla':100,'sla_samples':2,'sla_window_days':90,'latency_ms':1,
+                       'timeline':[{'start':now-(90-i)*86400,'uptime_pct':100 if i==89 else None}
+                                   for i in range(90)],'timeline_days':90}
+                payload['services']=[fresh]
+                await page.evaluate('refresh()')
+                uptime=page.locator('#services .m-uptime')
+                await page.wait_for_timeout(350)
+                await page.screenshot(path=str(args.out/'fresh-install-uptime.png'),full_page=True)
+                assert await uptime.inner_text()=='2m',await uptime.inner_text()
+                for seconds,expected in ((None,'–'),(0,'0m'),(26*3600,'1d 2h')):
+                    fresh['uptime_seconds']=seconds
+                    await page.evaluate('refresh()')
+                    assert await uptime.inner_text()==expected,await uptime.inner_text()
+                payload['services']=[]
                 if args.private_state:
                     private=json.loads(args.private_state.read_text())
                     payload.update(agent_tables=private['tables'],columns=[],plugin_errors=private['errors'])
@@ -152,7 +173,7 @@ async def verify(args):
                     await page.evaluate('refresh()');await page.wait_for_timeout(350)
                     await page.screenshot(path=str(args.out/'private-plugin.png'),full_page=True)
                 assert not errors,errors
-                print('PASS: daemon Running/latency tooltip, unhealthy statuses, shared columns/layout, reference geometry, usage, action routing, error isolation, HTML escaping.')
+                print('PASS: daemon Running/latency tooltip, unhealthy statuses, shared columns/layout, reference geometry, usage, action routing, error isolation, HTML escaping, observed uptime.')
             finally: await browser.close()
     finally: server.shutdown();server.server_close();thread.join(2)
 
