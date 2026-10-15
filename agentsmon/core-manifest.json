@@ -21,6 +21,6 @@
     "usage_plugin.py": "d30e2fd2ff35c486cabed7dc7913028fffddee4ab9a8cb9c9c3ecee83ca5c72a",
     "wizard.py": "c8c4881428626be2546fe88e0fe73d3ed96b9eb6112132a6a63caf4da55ffa9b"
   },
-  "release": "v0.3.0-review",
+  "release": "v0.3.0",
   "version": "0.3.0"
 }

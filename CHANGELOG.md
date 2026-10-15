@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 – review candidate (2026-10-15)
+## 0.3.0 (2026-10-15)
 
 ### Core/plugin boundary
 
@@ -51,4 +51,3 @@
   the original PR's networking implementation.
 
 See [community review](docs/COMMUNITY-REVIEW.md) for other fork findings and scope decisions.
-This candidate has not been published, tagged on GitHub, or deployed automatically.
