@@ -1,0 +1,26 @@
+{
+  "content_id": "48c13f10033d4c2d72a3d58a8f35e4ed9424abe688e112632a8aeb479eb4047c",
+  "files": {
+    "__init__.py": "b097ed64761ca3655907bd8cfcfcb90b77e847dc648c95f41193caed082ce6d3",
+    "__main__.py": "57ed98fd45acf4852c17cdf37c205a433dc612f09bb13cdb5cadc5698437734e",
+    "config.py": "b9deca85e19f7484cd41e2b378482025fd8c2666075e4cb69cfd0ff40171d332",
+    "dashboard.py": "64149a5806696727a2b6cb04d7cd08bfe1148992a2d519778c0c368748c883e4",
+    "db.py": "470bafc161d24ac1bea302af0873ebf2e596a8ce77796cb29e79189bb2d1c5cf",
+    "detect.py": "0744ee0014c5efee1ec96af90f2d8dd12fe18cc7e577445a81a3194590c7d118",
+    "doctor.py": "031123e32eb89795144efce7cf17d10b286464eb470631bb1d6db74f72947730",
+    "integrity.py": "d844957010427fce6141365dc00e3dacaa45182e448c7177ae9ed4bc5d7a341b",
+    "keepalive.py": "64fa154545e930a0073efbe03fc0349884697e887138a539be4ec4cb589b1c87",
+    "plugin_worker.py": "407c3054cfba3429b5f1c7cf28413d12a6b6a12eb0f49de9d23135c2daf4dedb",
+    "plugins.py": "c19d57a77f72b1f50da274ccdcaadce9f8e379cff5e87d8ea63599d20f2c9e53",
+    "probe.py": "89c803810394351a6dee1e5f85ed4784856cd98dc6f1782405b3ec4f8ab479f8",
+    "service.py": "c71d038a69ca3534bd4d9b5ff504e0bcf0662292b6f285f6df28a717049ecdb2",
+    "static/tailwind.js": "176e894661aa9cdc9a5cba6c720044cbbf7b8bd80d1c9a142a7c24b1b6c50d15",
+    "status.py": "93ec57cb9be2d6234cbaaf421844bb00a80a8d2883a8633225ab27a7410d5d85",
+    "uninstaller.py": "3958e5b303236da4ba80a180301a6e97b1b5fb78264b7d04d4d5fbefc6fe073a",
+    "updater.py": "35e5c08cb14ddca8ea85428c8ae56883aa42402c1329602bb7951a83fa7e9090",
+    "usage_plugin.py": "d30e2fd2ff35c486cabed7dc7913028fffddee4ab9a8cb9c9c3ecee83ca5c72a",
+    "wizard.py": "c8c4881428626be2546fe88e0fe73d3ed96b9eb6112132a6a63caf4da55ffa9b"
+  },
+  "release": "v0.3.0-review",
+  "version": "0.3.0"
+}

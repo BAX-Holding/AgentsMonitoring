@@ -336,7 +336,7 @@ def migrate_config(cfg: dict) -> bool:
         url = s.get("health_url") or ""
         is_daemon_card = (s.get("process") in pinned_pats or s.get("name") in pinned_names
                           or url.endswith(":18789/health")
-                          or s.get("name") == "Multi-Agent System Availability")
+                          or s.get("name") in ("Multi-Agent System Availability", "Multi-agent system availability"))  # both spellings accepted in existing configs
         if not is_daemon_card:
             kept.append(s)
     new_services = [dict(SYSTEM_SERVICE)] + kept
@@ -370,12 +370,7 @@ def _daemon_entries(d: dict) -> tuple:
     tg = d.get("telegram") or detect.daemon_telegram_bot(d.get("name", ""))
     if tg:
         pinned["telegram"] = tg
-    model = detect.daemon_model(d["name"])
-    if model:
-        pinned["tag"] = model
-        v = detect.vendor_for_model(model)
-        if v:
-            pinned["vendor"] = v
+    # Model/account detection stays live. Only manually entered tags override it.
     return daemon, pinned
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import math
 import os
 import subprocess
 import time
@@ -52,6 +53,33 @@ def _http(url: str, timeout: float = 4) -> tuple[bool, float | None]:
 
 
 def _command(cmd: str, timeout: float = 15) -> tuple[bool, float | None, str]:
+    """Backwards-compatible 3-tuple; see ``_run`` for the full contract including ``rows``."""
+    ok, lat, detail, _rows = _run(cmd, timeout)
+    return ok, lat, detail
+
+
+def _rows_from(d: dict) -> list[dict]:
+    """Normalise the optional ``rows`` list of a module's JSON: one line per sub-check
+    (a website, a database, a tunnel…), each with its own uptime history. ``name`` and ``up`` are
+    required, ``latency_ms``, ``detail`` and ``url`` optional. Junk is skipped, never fatal."""
+    out = []
+    rows=d.get('rows') or []
+    if not isinstance(rows,list): return []
+    for r in rows[:50]:
+        if not isinstance(r, dict) or not r.get("name") or type(r.get('up')) is not bool:
+            continue
+        lat = r.get("latency_ms")
+        try:
+            lat = round(float(lat) / 1000, 3) if lat is not None else None
+            if lat is not None and (not math.isfinite(lat) or lat<0): lat=None
+        except (TypeError, ValueError):
+            lat = None
+        out.append({"name": str(r["name"])[:80], "up": bool(r["up"]), "latency": lat,
+                    "detail": str(r.get("detail") or "")[:200], "url": str(r.get("url") or "")[:200]})
+    return out[:50]
+
+
+def _run(cmd: str, timeout: float = 15) -> tuple[bool, float | None, str, list[dict]]:
     """Run a check command/script. Exit code 0 = up. If stdout is a JSON object it may carry
     ``up`` (bool), ``latency_ms`` (number) and ``detail`` (str) — that is the whole module
     contract, so a module can be a three-line shell script or anything that prints JSON.
@@ -61,11 +89,12 @@ def _command(cmd: str, timeout: float = 15) -> tuple[bool, float | None, str]:
         r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout,
                            env={**os.environ, "AGENTSMON_MODULE": "1"})
     except subprocess.TimeoutExpired:
-        return False, None, f"timeout after {timeout:.0f}s"
+        return False, None, f"timeout after {timeout:.0f}s", []
     except OSError as e:
-        return False, None, f"cannot run: {e.__class__.__name__}"
+        return False, None, f"cannot run: {e.__class__.__name__}", []
     lat = round(time.time() - t0, 3)
     ok = r.returncode == 0
+    rows: list[dict] = []
     out = (r.stdout or "").strip()
     detail = (out or (r.stderr or "").strip()).splitlines()[0][:200] if (out or r.stderr) else ("up" if ok else f"exit {r.returncode}")
     if out.startswith("{"):
@@ -73,14 +102,17 @@ def _command(cmd: str, timeout: float = 15) -> tuple[bool, float | None, str]:
             d = json.loads(out)
             if isinstance(d, dict):
                 if "up" in d:
+                    if type(d['up']) is not bool: raise ValueError('Invalid health flag')
                     ok = bool(d["up"]) and ok
                 if d.get("latency_ms") is not None:
                     lat = round(float(d["latency_ms"]) / 1000, 3)
+                    if not math.isfinite(lat) or lat<0: raise ValueError('Invalid metric')
                 if d.get("detail"):
                     detail = str(d["detail"])[:200]
+                rows = _rows_from(d)
         except (ValueError, TypeError):
-            pass
-    return ok, lat, detail
+            return False,None,'Invalid module JSON or metrics',[]
+    return ok, lat, detail, rows
 
 
 def _fresh_sample(name: str, cfg: dict) -> dict | None:
@@ -161,6 +193,48 @@ def _system_health(cfg: dict) -> tuple[bool, float | None, str]:
     return up, avg, detail
 
 
+ROW_SEP = " › "          # sample name of a module row: "<service> › <row>"
+
+
+def _rows_path() -> str:
+    from . import config   # local import: probe is imported by config-free helpers/tests too
+    return str(config.state_dir() / "service_rows.json")
+
+
+def _record_rows(service: str, rows: list[dict]) -> None:
+    """Record each module row as its own sample (so it gets uptime/SLA like any service) and
+    remember the row order + urls for the dashboard. No rows → nothing written, nothing removed."""
+    if not rows:
+        return
+    for r in rows:
+        db.record(service + ROW_SEP + r["name"], r["up"], r["latency"], r["detail"])
+    try:
+        path = _rows_path()
+        try:
+            with open(path, encoding="utf-8") as stream:
+                data = json.load(stream)
+            if not isinstance(data,dict): data={}
+        except (OSError, ValueError):
+            data = {}
+        data[service] = [{"name": r["name"], "url": r["url"]} for r in rows]
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+def service_rows(service: str) -> list[dict]:
+    """Row names/urls last reported by a module (empty when it has none)."""
+    try:
+        with open(_rows_path(), encoding="utf-8") as stream:
+            data=json.load(stream)
+        return list(data.get(service) or []) if isinstance(data,dict) else []
+    except (OSError, ValueError, TypeError):
+        return []
+
+
 def probe_once(cfg: dict) -> None:
     for s in cfg.get("services", []):
         name = s.get("name")
@@ -177,7 +251,8 @@ def probe_once(cfg: dict) -> None:
             ok = proc and http_ok
             detail += f" http={'ok' if http_ok else 'down'}"
         if s.get("command"):
-            cmd_ok, cmd_lat, cmd_detail = _command(s["command"], float(s.get("timeout_seconds", 15)))
+            cmd_ok, cmd_lat, cmd_detail, rows = _run(s["command"], float(s.get("timeout_seconds", 15)))
+            _record_rows(name, rows)
             ok = ok and cmd_ok
             lat = lat if lat is not None else cmd_lat
             # The command's own words lead; process/HTTP are mentioned only when they fail.

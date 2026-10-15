@@ -2,6 +2,15 @@
 # Agents Monitoring one-command installer.
 # Usage:  curl -fsSL <raw-url>/install.sh | bash      (or run it from a clone)
 set -euo pipefail
+NO_SETUP=0
+NO_PIP=0
+for arg in "$@"; do
+  case "$arg" in
+    --no-setup) NO_SETUP=1 ;;
+    --no-pip) NO_PIP=1 ;;
+    *) printf 'Unknown option: %s\n' "$arg" >&2; exit 2 ;;
+  esac
+done
 cd "$PWD" 2>/dev/null || cd "$HOME" 2>/dev/null || cd /
 
 REPO="https://github.com/petrludwig-collab/AgentsMonitoring.git"
@@ -76,7 +85,7 @@ fi
 # pip is OPTIONAL — the package is pure standard library. Try pip (so hooks/other tools can
 # import it), but EITHER WAY drop our own launcher into a dir on PATH so `agentsmon` is a real
 # command right after install — no PYTHONPATH to remember, no new shell when a PATH dir is writable.
-if "$PY" -m pip --version >/dev/null 2>&1 || "$PY" -m ensurepip --upgrade >/dev/null 2>&1; then
+if [ "$NO_PIP" -eq 0 ] && { "$PY" -m pip --version >/dev/null 2>&1 || "$PY" -m ensurepip --upgrade >/dev/null 2>&1; }; then
   "$PY" -m pip install --user --upgrade "$SRC" >/dev/null 2>&1 \
     || "$PY" -m pip install --user --break-system-packages --upgrade "$SRC" >/dev/null 2>&1 || true
 fi
@@ -100,5 +109,5 @@ case ":$PATH:" in
 esac
 
 say "Run it later with:  $HOW status   (add more bots anytime with:  $HOW add)"
-if [ -e /dev/tty ]; then say "Starting setup…"; exec "${RUN[@]}" setup </dev/tty
+if [ "$NO_SETUP" -eq 0 ] && [ -e /dev/tty ]; then say "Starting setup…"; exec "${RUN[@]}" setup </dev/tty
 else say "Installed. Finish setup with:  $HOW setup"; fi

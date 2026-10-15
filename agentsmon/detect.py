@@ -13,8 +13,10 @@ import glob
 import json
 import os
 import re
+import shlex
 import shutil
 import sqlite3
+from contextlib import closing
 import subprocess
 import time
 import urllib.request
@@ -244,14 +246,16 @@ def _codex_session_for_cwd(cwd: str) -> str | None:
     return _codex_info_for_cwd(cwd)[0]
 
 
-def label_for_claude(transcript_model: str | None, cmds: list[str], fallback: str) -> str:
+def label_for_claude(transcript_model: str | None, cmds: list[str], fallback: str, *, exact_session=True) -> str:
     """The model tag for a Claude Code row — the SINGLE place that decides it.
 
-    Order matters: the transcript reports the model actually in use (a session can be
-    switched at runtime with /model), so it wins. argv covers the first minutes, before any
-    transcript exists. The generic kind label is the last resort.
+    A transcript tied to an explicit session ID reports runtime /model switches and wins.
+    A cwd-only transcript can belong to another agent, so explicit argv wins over that
+    ambiguous estimate. The generic kind label is the last resort.
     """
-    return transcript_model or _model_from_argv(cmds) or fallback
+    if exact_session:
+        return transcript_model or _model_from_argv(cmds) or fallback
+    return _model_from_argv(cmds) or transcript_model or fallback
 
 
 def _model_from_argv(cmds: list[str]) -> str | None:
@@ -263,9 +267,12 @@ def _model_from_argv(cmds: list[str]) -> str | None:
     cannot answer yet.
     """
     for cmd in cmds:
-        m = re.search(r"--model[= ]+(\S+)", cmd)
-        if m:
-            return prettify_model(m.group(1).strip("\"'"))
+        try: parts = shlex.split(cmd)
+        except ValueError: continue
+        if not parts or os.path.basename(parts[0]) not in ('claude','codex','agy','antigravity'): continue
+        for i,part in enumerate(parts):
+            if part == '--model' and i+1 < len(parts): return prettify_model(parts[i+1])
+            if part.startswith('--model='): return prettify_model(part.split('=',1)[1])
     return None
 
 
@@ -287,6 +294,7 @@ def _pretty_claude_model(raw: str) -> str:
     """``claude-opus-4-8`` → ``Opus 4.8`` (family + version); unknown ids returned as-is."""
     m = re.match(r"claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d+))?", raw or "")
     if not m:
+        if raw in ('opus','sonnet','haiku','fable'): return raw.capitalize()
         return raw
     ver = m.group(2) + (f".{m.group(3)}" if m.group(3) else "")
     return f"{m.group(1).capitalize()} {ver}"
@@ -327,6 +335,12 @@ def claude_project_dirs(cwd: str) -> list[Path]:
             videne.add(name)
             formy.append(base / name)
     return formy
+
+
+def _claude_model_for_session(sid: str) -> str | None:
+    if not UUID_RE.fullmatch(sid): return None
+    paths = list((Path.home()/'.claude/projects').glob('*/'+sid+'.jsonl'))
+    return _claude_model_from_transcript(str(paths[0])) if len(paths)==1 else None
 
 
 def _claude_info_for_cwd(cwd: str, taken: set | None = None) -> tuple[str | None, str | None]:
@@ -418,13 +432,10 @@ def _antigravity_model_from_db(sid: str | None) -> str | None:
     # (the only kind we ever ask about). `immutable=1` reads the main file without that.
     for uri in (f"file:{db}?mode=ro", f"file:{db}?immutable=1"):
         try:
-            con = sqlite3.connect(uri, uri=True)
-            for (v,) in con.execute("SELECT data FROM gen_metadata ORDER BY idx DESC LIMIT 5"):
-                s = v.decode("utf-8", "ignore") if isinstance(v, (bytes, bytearray)) else str(v)
-                # A version must follow the family name, otherwise unrelated strings in the
-                # blob match: `gemini-backup` and `gemini-20260425-144749` both did.
-                ids += MODEL_ID_RE.findall(s)
-            con.close()
+            with closing(sqlite3.connect(uri, uri=True)) as con:
+                for (v,) in con.execute("SELECT data FROM gen_metadata ORDER BY idx DESC LIMIT 5"):
+                    s = v.decode("utf-8", "ignore") if isinstance(v, (bytes, bytearray)) else str(v)
+                    ids += MODEL_ID_RE.findall(s)
             break
         except sqlite3.Error:
             continue
@@ -545,7 +556,7 @@ def _pretty_model(raw: str) -> str:
     ``openai/gpt-5.6-sol`` → ``GPT-5.6 Sol``, ``gpt-5.5`` → ``GPT-5.5``, ``o3-mini`` → ``O3 Mini``.
 
     Upper-casing the whole id (``GPT-6-ASTRA``) put a shouting tag next to ``Fable 5.1``
-    (Petr, 2026-09-04). Family stays upper-case, the version keeps its dash, the codename
+    in the same dashboard. Family stays upper-case, the version keeps its dash, the codename
     after it becomes a capitalised word. Anything that is not an OpenAI id is left alone.
     """
     raw = (raw or "").split("/")[-1]
@@ -612,11 +623,24 @@ def _hermes_model() -> str | None:
     is not authoritative — read the agent's own config so the tag follows a model switch.
     Best-effort; returns None on any failure so the caller can fall back."""
     try:
-        head = (Path.home() / ".hermes" / "config.yaml").read_text("utf-8")[:1500]
+        with (Path.home() / ".hermes" / "config.yaml").open(encoding="utf-8") as stream:
+            head = stream.read(65536)
     except OSError:
         return None
-    m = re.search(r"(?m)^model:\s*$\s*^\s+default:\s*(\S+)", head)
-    return _pretty_model(m.group(1)) if m else None
+    # Scalar values only: no arbitrary YAML tags or assumptions about key order.
+    block = False
+    for line in head.splitlines():
+        if re.match(r'^model:\s*(?:#.*)?$',line): block=True; continue
+        if block and line.strip() and not line[0].isspace(): break
+        m=re.match(r'^\s+default:\s*(.*?)\s*$',line) if block else None
+        if m:
+            try:
+                lex=shlex.shlex(m.group(1),posix=True);lex.whitespace_split=True;lex.commenters='#'
+                values=list(lex)
+            except ValueError: return None
+            if len(values)==1 and re.fullmatch(r'[A-Za-z0-9_./:-]+',values[0]): return _pretty_model(values[0])
+            return None
+    return None
 
 
 def daemon_model(name: str) -> str | None:
@@ -625,9 +649,9 @@ def daemon_model(name: str) -> str | None:
     if "openclaw" in n:
         return _openclaw_model()
     if "hermes" in n:
-        # Hermes picks its own model on the openai-codex provider (model.default in
-        # ~/.hermes/config.yaml); fall back to the Codex rollout model if unreadable.
-        return _hermes_model() or _codex_model() or _codex_model_any()
+        # Hermes owns its model selection. Unknown configuration must stay unknown;
+        # another CLI's rollout can belong to an entirely different account/session.
+        return _hermes_model()
     return None
 
 
@@ -687,13 +711,15 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
         # the concrete model by cwd, so both show up (just like Codex does).
         if kind == "claude-code":
             cwd = _session_cwd(s["name"])
+            explicit_sid = sid
             csid, cmodel = _claude_info_for_cwd(cwd, prirazena) if cwd else (None, None)
+            if explicit_sid:
+                cmodel = _claude_model_for_session(explicit_sid)
             if sid is None:
                 sid = csid
-            # Transcript first — it reports the model actually in use (a session can be
-            # switched with /model). argv is the fallback for a session young enough that
-            # no transcript exists yet.
-            label = label_for_claude(cmodel, ranked, label)
+            # Exact session transcript preserves /model switches. A cwd-only match
+            # cannot override an explicit model on this process's command line.
+            label = label_for_claude(cmodel, ranked, label, exact_session=bool(explicit_sid))
         elif kind == "antigravity":
             cwd = _session_cwd(s["name"])
             asid, amodel = _antigravity_info_for_cwd(cwd) if cwd else (None, None)

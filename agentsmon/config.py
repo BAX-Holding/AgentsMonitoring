@@ -36,6 +36,9 @@ DEFAULTS = {
     # optional JSON on stdout: {"up", "latency_ms", "detail"}). Header lines "# agentsmon: key=value"
     # may set name / latency_label / timeout_seconds. Nothing here is required or published.
     "modules_dir": "~/.config/agentsmon/modules",
+    "plugin_entry_points": [],  # opt-in names in the agentsmon.plugins entry point group
+    "usage_plugin": None,       # explicit row -> account/source mapping; no automatic credentials
+    "hidden_sessions": [],
     "dashboard": {"host": "127.0.0.1", "port": 8765, "poll_seconds": 15},
     "probe": {"interval_seconds": 60, "sla_window_days": 90, "timeline_days": 90, "min_outage_samples": 3},
     "keepalive": {"enabled": True, "interval_seconds": 60},
@@ -101,6 +104,8 @@ def discover_modules(cfg: dict) -> list[dict]:
     taken = {s.get("name") for s in cfg.get("services", []) if s.get("name")}
     found = []
     for f in sorted(d.iterdir()):
+        if f.name.endswith('.agentsmon.json'):
+            continue
         if not f.is_file() or f.name.startswith((".", "_")) or not os.access(f, os.X_OK):
             continue
         hdr = _module_header(f)

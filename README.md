@@ -69,6 +69,58 @@ agentsmon doctor            # sanity-check tools + config
 agentsmon uninstall         # stop services, remove config + state (agents untouched)
 ```
 
+## Plugins and clean core (0.3)
+
+Keep organization-specific integrations outside this repository. Versioned plugins can add
+agent tables, display columns, model/account detectors, hidden sessions and guarded row
+actions. Every table uses the same renderer. Existing executable service-card modules remain
+compatible. Failed/timed-out plugins produce a visible error without taking down the page.
+
+Minimal layout in your configured `modules_dir`:
+
+```text
+example/
+  agentsmon-plugin.json
+  plugin.py
+```
+
+`agentsmon-plugin.json`:
+
+```json
+{"api_version":1,"id":"example","version":"1.0.0","module":"plugin.py","settings":{}}
+```
+
+`plugin.py`:
+
+```python
+def collect(context, settings):
+    return {"tables": [{"id": "workers", "title": "Example workers", "rows": [
+        {"id": "one", "name": "Example", "alive": True, "label": "My model"}
+    ]}]}
+```
+
+Restart the dashboard after installing/changing the manifest. Plugins are trusted local
+code, run in bounded subprocesses; this is failure isolation, **not an OS security sandbox**.
+The API does not pass dashboard auth/config to plugins. See [API, actions, entry points and
+optional account-scoped Usage](docs/PLUGINS.md), and [migration/rollback](docs/MIGRATION-0.3.md).
+
+`agentsmon doctor` prints the package version, release identifier, content hash, clean/modified
+state and loaded plugin versions/errors. The footer shows `core v0.3.0 (clean)` or `modified`.
+The included manifest detects changed, missing and added package files. `clean` means equality
+to that manifest; it is not a cryptographic publisher signature. A review candidate is not
+yet a published GitHub release. Compare the manifest/content hash to the reviewed release
+when installing. Do not regenerate the manifest to conceal local modifications.
+
+For an isolated install without wizard/service registration or pip/network access:
+
+```bash
+bash install.sh --no-setup --no-pip
+```
+
+Run from your reviewed checkout. `--no-pip` keeps a standard-library launcher pointing to that
+checkout; use a stable directory. `--no-setup` does not launch agents or install a boot service.
+The normal interactive installer behavior is unchanged.
+
 `agentsmon status` example:
 
 ```

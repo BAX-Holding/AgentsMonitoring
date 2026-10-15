@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import shutil
 
-from . import config, detect
+from . import config, detect, plugins, integrity
 
 
 def run() -> int:
@@ -13,6 +13,14 @@ def run() -> int:
     print(f"  tmux:    {'✓ ' + tmux if tmux else '✗ not found (agents need tmux)'}")
     ok = ok and bool(tmux)
     cfg = config.load()
+    core = integrity.status()
+    print(f"  core:    v{core['version']} ({core['state']}) · {core['release'] or 'no release manifest'}")
+    print(f"  content: {core['content_id'] or 'unverified'}")
+    ok = ok and core['state'] == 'clean'
+    extensions = plugins.Manager(cfg).collect([])
+    for extension in extensions['plugins']:
+        print(f"  plugin:  {extension['id']} v{extension['version']} API {extension['api_version']} · {extension['error'] or 'OK'}")
+    ok = ok and not extensions['errors']
     print(f"  config:  {config.DEFAULT_PATH} ({'exists' if config.DEFAULT_PATH.exists() else 'defaults only'})")
     print(f"  agents:  {len(cfg.get('agents', []))} configured")
     print(f"  daemons: {len(cfg.get('daemons', []))} watched")

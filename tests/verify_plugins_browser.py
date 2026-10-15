@@ -1,0 +1,129 @@
+"""Optional real-browser acceptance with local fixtures; no live services/actions.
+
+python tests/verify_plugins_browser.py --browser /path/to/chrome --out /tmp/evidence
+Optionally --reference-page old-dashboard.html compares the previous renderer.
+"""
+import argparse
+import asyncio
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+from pathlib import Path
+import sys
+import threading
+
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from agentsmon import dashboard
+
+
+async def verify(args):
+    from playwright.async_api import async_playwright
+    args.out.mkdir(parents=True,exist_ok=True)
+    sid='11111111-2222-3333-4444-555555555555'
+    shared={'name':'Example Agent','kind':'codex','vendor':'openai','label':'GPT-6 Astra',
+            'alive':True,'age':3600,'session_id':sid,'account':'Fixture account','telegram_bot':'example_test_bot',
+            'telegram_url':'https://t.me/example_test_bot'}
+    extension={**shared,'id':'example','kind':'sandbox','plugin':'fixture','actions':False,
+               'actions_locked':True,'tmux_session':'example','row_actions':[
+                   {'id':'reload','icon':'restart','label':'Safe reload','confirm':'Reload fixture?'}]}
+    table={'id':'fixture:team','title':'Example Team','rows':[extension],'up':True,'error':'','note':'Fixture'}
+    payload={'agents':[shared],'agent_tables':[table], 'columns':[], 'services':[],
+             'plugins':[],'plugin_errors':[], 'core':{'version':'0.3.0','state':'clean'},
+             'sandbox_agents':{'enabled':True,'rows':[extension],'up':True,'stale':False,'age_s':1}}
+    posts=[]
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self,*args): pass
+        def do_GET(self):
+            if self.path=='/': body=dashboard.PAGE.replace('POLL','3600').encode(); kind='text/html'
+            elif self.path=='/reference' and args.reference_page:
+                body=args.reference_page.read_text().replace('POLL','3600').encode();kind='text/html'
+            elif self.path=='/api/state': body=json.dumps(payload).encode();kind='application/json'
+            elif self.path=='/static/tailwind.js': body=dashboard._STATIC_TAILWIND;kind='application/javascript'
+            else: self.send_error(404); return
+            self.send_response(200);self.send_header('Content-Type',kind+'; charset=utf-8')
+            self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
+        def do_POST(self):
+            posts.append(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
+            body=b'{"ok":true,"message":"Fixture only"}'
+            self.send_response(200);self.send_header('Content-Type','application/json')
+            self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
+    server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+    thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+    async def geometry(root):
+        return await root.locator('tbody tr').first.locator('td').evaluate_all(
+            '(cells)=>cells.map(c=>({x:c.getBoundingClientRect().x,width:c.getBoundingClientRect().width,height:c.getBoundingClientRect().height}))')
+    def same(a,b):
+        assert len(a)==len(b)
+        for one,two in zip(a,b):
+            for key in ('x','width','height'): assert abs(one[key]-two[key])<1,(key,one,two)
+    try:
+        async with async_playwright() as p:
+            browser=await p.chromium.launch(executable_path=args.browser,headless=True)
+            try:
+                page=await browser.new_page(viewport={'width':1280,'height':900},device_scale_factor=1)
+                errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+                await page.goto(f'http://127.0.0.1:{server.server_port}/')
+                upper=page.locator('[data-svc="agents"]')
+                lower=page.locator('[data-svc="fixture:team"]')
+                await lower.locator('tbody td').first.wait_for()
+                await page.wait_for_timeout(350)
+                same(await geometry(upper),await geometry(lower))
+                assert await upper.locator('thead').inner_text()==await lower.locator('thead').inner_text()
+                assert sid in await lower.inner_text()
+                assert await lower.locator('[title="Account: Fixture account"]').count()==1
+                assert await lower.locator('a[href="https://t.me/example_test_bot"]').count()==1
+                assert await lower.locator('[data-act="reload"]').count()==1
+                assert await lower.locator('[data-act="stop"]').count()==0
+                assert 'core v0.3.0 (clean)' in await page.locator('#footer').inner_text()
+                await page.screenshot(path=str(args.out/'plugin-parity.png'),full_page=True)
+                current=await geometry(upper)
+                if args.reference_page:
+                    old=await browser.new_page(viewport={'width':1280,'height':900})
+                    await old.goto(f'http://127.0.0.1:{server.server_port}/reference')
+                    await old.locator('[data-svc="sandbox-agents"] tbody td').first.wait_for()
+                    await old.wait_for_timeout(350)
+                    same(current,await geometry(old.locator('[data-svc="agents"]')))
+                    await old.screenshot(path=str(args.out/'reference.png'),full_page=True)
+                    await old.close()
+                page.on('dialog',lambda d:d.accept())
+                await lower.locator('[data-act="reload"]').click()
+                await page.wait_for_timeout(200)
+                assert posts==[{'name':'Example Agent','action':'reload','table':'fixture:team','row':'example'}],posts
+                payload['columns']=[{'id':'usage:limits','title':'Usage'}]
+                for row in (shared,extension):
+                    row['cells']={'usage:limits':{'text':'','bars':[{'label':'5h','percent':25,'title':'Fixture account'}]}}
+                await page.evaluate('refresh()')
+                await page.wait_for_timeout(300)
+                await page.screenshot(path=str(args.out/'usage-debug.png'),full_page=True)
+                same(await geometry(upper),await geometry(lower))
+                await page.screenshot(path=str(args.out/'usage.png'),full_page=True)
+                extension.update(alive=False,status='Unresponsive',status_detail='Last recovery: fixture')
+                table.update(up=False,error='Supervisor unavailable')
+                payload['plugin_errors']=[{'name':'Plugin broken failed','detail':'Plugin timed out'}]
+                await page.evaluate('refresh()')
+                assert 'Unresponsive' in await lower.inner_text()
+                assert 'Supervisor unavailable' in await lower.inner_text()
+                assert 'bg-rose-500' in await lower.locator('.svc-dot').get_attribute('class')
+                assert 'Plugin timed out' in await page.locator('#plugin-errors').inner_text()
+                assert 'Running' in await upper.inner_text()
+                extension['name']='<img src=x onerror="window.PWNED=1">'
+                await page.evaluate('refresh()')
+                assert await lower.locator('img').count()==0
+                assert await page.evaluate('window.PWNED || null') is None
+                await page.screenshot(path=str(args.out/'failure-isolation.png'),full_page=True)
+                if args.private_state:
+                    private=json.loads(args.private_state.read_text())
+                    payload.update(agent_tables=private['tables'],columns=[],plugin_errors=private['errors'])
+                    shared.pop('cells',None)
+                    await page.evaluate('refresh()');await page.wait_for_timeout(350)
+                    await page.screenshot(path=str(args.out/'private-plugin.png'),full_page=True)
+                assert not errors,errors
+                print('PASS: shared columns/layout, reference geometry, usage, action routing, error isolation, HTML escaping.')
+            finally: await browser.close()
+    finally: server.shutdown();server.server_close();thread.join(2)
+
+
+if __name__=='__main__':
+    parser=argparse.ArgumentParser();parser.add_argument('--browser',required=True)
+    parser.add_argument('--out',required=True,type=Path);parser.add_argument('--reference-page',type=Path)
+    parser.add_argument('--private-state',type=Path,help='Optional already sanitized plugin result, never checked into this repo')
+    asyncio.run(verify(parser.parse_args()))
