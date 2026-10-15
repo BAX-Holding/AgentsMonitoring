@@ -18,11 +18,11 @@ class FirstRunPromptsArePreAnswered(unittest.TestCase):
         """Mutation: drop the `hasTrustDialogAccepted` assignment → the dialog still blocks."""
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)
-            zapsano = pretrust_claude("/home/domi", home)
+            zapsano = pretrust_claude("/home/alice", home)
             cfg = json.loads((home / ".claude.json").read_text("utf-8"))
-            self.assertTrue(cfg["projects"]["/home/domi"]["hasTrustDialogAccepted"])
+            self.assertTrue(cfg["projects"]["/home/alice"]["hasTrustDialogAccepted"])
             self.assertTrue(cfg["hasCompletedOnboarding"])
-            self.assertIn("trusted folder /home/domi", zapsano)
+            self.assertIn("trusted folder /home/alice", zapsano)
 
     def test_keeps_everything_else_in_the_config(self):
         """Mutation: write a fresh dict instead of the parsed one → the user loses their config."""
@@ -31,12 +31,12 @@ class FirstRunPromptsArePreAnswered(unittest.TestCase):
             (home / ".claude.json").write_text(json.dumps({
                 "numStartups": 103, "customApiKeyResponses": {"approved": ["abc"]},
                 "projects": {"/jiny": {"hasTrustDialogAccepted": True, "lastCost": 1.5}}}), "utf-8")
-            pretrust_claude("/home/domi", home)
+            pretrust_claude("/home/alice", home)
             cfg = json.loads((home / ".claude.json").read_text("utf-8"))
             self.assertEqual(cfg["numStartups"], 103)
             self.assertEqual(cfg["customApiKeyResponses"], {"approved": ["abc"]})
             self.assertEqual(cfg["projects"]["/jiny"]["lastCost"], 1.5)
-            self.assertTrue(cfg["projects"]["/home/domi"]["hasTrustDialogAccepted"])
+            self.assertTrue(cfg["projects"]["/home/alice"]["hasTrustDialogAccepted"])
 
     def test_is_a_no_op_when_already_trusted(self):
         """Nothing to record → the file must not be touched at all. Written in COMPACT json on
@@ -46,12 +46,12 @@ class FirstRunPromptsArePreAnswered(unittest.TestCase):
         Mutation: drop the `if not zapsano: return ""` guard → the config is rewritten."""
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)
-            puvodni = '{"hasCompletedOnboarding":true,"projects":{"/home/domi":{"hasTrustDialogAccepted":true}}}'
+            puvodni = '{"hasCompletedOnboarding":true,"projects":{"/home/alice":{"hasTrustDialogAccepted":true}}}'
             (home / ".claude.json").write_text(puvodni, "utf-8")
             (home / ".claude").mkdir()
             (home / ".claude" / "settings.json").write_text(
                 '{"skipDangerousModePermissionPrompt":true}', "utf-8")
-            self.assertEqual(pretrust_claude("/home/domi", home), "")
+            self.assertEqual(pretrust_claude("/home/alice", home), "")
             self.assertEqual((home / ".claude.json").read_text("utf-8"), puvodni,
                              "the config was rewritten even though nothing changed")
 
@@ -62,7 +62,7 @@ class FirstRunPromptsArePreAnswered(unittest.TestCase):
         Mutation: drop the `_skip_bypass_warning` call → the agent stops on the warning."""
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)
-            zapsano = pretrust_claude("/home/domi", home)
+            zapsano = pretrust_claude("/home/alice", home)
             nastaveni = json.loads((home / ".claude" / "settings.json").read_text("utf-8"))
             self.assertTrue(nastaveni["skipDangerousModePermissionPrompt"])
             self.assertIn("bypass-mode warning", zapsano)
@@ -74,7 +74,7 @@ class FirstRunPromptsArePreAnswered(unittest.TestCase):
             (home / ".claude").mkdir()
             (home / ".claude" / "settings.json").write_text(
                 json.dumps({"model": "opus", "permissions": {"allow": ["Read"]}}), "utf-8")
-            pretrust_claude("/home/domi", home)
+            pretrust_claude("/home/alice", home)
             s = json.loads((home / ".claude" / "settings.json").read_text("utf-8"))
             self.assertEqual(s["model"], "opus")
             self.assertEqual(s["permissions"], {"allow": ["Read"]})
@@ -88,7 +88,7 @@ class FirstRunPromptsArePreAnswered(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)
             (home / ".claude.json").write_text("{ this is not json", "utf-8")
-            self.assertEqual(pretrust_claude("/home/domi", home), "")
+            self.assertEqual(pretrust_claude("/home/alice", home), "")
             self.assertEqual((home / ".claude.json").read_text("utf-8"), "{ this is not json")
 
     def test_config_is_owner_only(self):
@@ -97,7 +97,7 @@ class FirstRunPromptsArePreAnswered(unittest.TestCase):
         Mutation: drop the chmod → it inherits the umask and can be world-readable."""
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)
-            pretrust_claude("/home/domi", home)
+            pretrust_claude("/home/alice", home)
             self.assertEqual((home / ".claude.json").stat().st_mode & 0o077, 0)
 
 

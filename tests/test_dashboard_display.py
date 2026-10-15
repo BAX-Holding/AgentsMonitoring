@@ -50,7 +50,7 @@ class VendorColour(unittest.TestCase):
 
 class SessionIdFallback(unittest.TestCase):
     def _state(self, discovered):
-        cfg = {"agents": [{"name": "Domi - Master", "restart": RESTART, "tag": "GPT-5.6-SOL"}],
+        cfg = {"agents": [{"name": "Alice - Master", "restart": RESTART, "tag": "GPT-5.6-SOL"}],
                "pinned_daemons": []}
         orig = detect.discover_agents
         detect.discover_agents = lambda *a, **k: discovered
@@ -60,17 +60,17 @@ class SessionIdFallback(unittest.TestCase):
             detect.discover_agents = orig
 
     def test_id_taken_from_resume_when_process_lost_it(self):
-        agents = self._state([{"name": "Domi - Master", "kind": "codex", "label": "GPT-5.6-SOL",
+        agents = self._state([{"name": "Alice - Master", "kind": "codex", "label": "GPT-5.6-SOL",
                                "session_id": None, "vendor": "openai", "alive": True,
                                "age": 60, "resume_cmd": None, "pids": [1]}])
-        self.assertEqual(agents["Domi - Master"]["session_id"], SID)
+        self.assertEqual(agents["Alice - Master"]["session_id"], SID)
 
     def test_detected_id_is_not_overwritten(self):
         jiny = "ffffffff-1111-2222-3333-444444444444"
-        agents = self._state([{"name": "Domi - Master", "kind": "codex", "label": "GPT-5.6-SOL",
+        agents = self._state([{"name": "Alice - Master", "kind": "codex", "label": "GPT-5.6-SOL",
                                "session_id": jiny, "vendor": "openai", "alive": True,
                                "age": 60, "resume_cmd": None, "pids": [1]}])
-        self.assertEqual(agents["Domi - Master"]["session_id"], jiny)
+        self.assertEqual(agents["Alice - Master"]["session_id"], jiny)
 
     def test_no_uuid_in_restart_stays_none(self):
         cfg = {"agents": [{"name": "X", "restart": "codex resume"}], "pinned_daemons": []}
@@ -99,8 +99,8 @@ class DashboardUrl(unittest.TestCase):
 
     def test_exposed_host_shows_both_urls(self):
         out = "\n".join(self.status._dashboard_lines(
-            {"dashboard": {"host": "5.10.251.171", "port": 8765}}))
-        self.assertIn("http://5.10.251.171:8765", out)
+            {"dashboard": {"host": "203.0.113.10", "port": 8765}}))
+        self.assertIn("http://203.0.113.10:8765", out)
         self.assertIn("local: http://127.0.0.1:8765", out)
 
     def test_localhost_only_shows_one(self):
@@ -116,8 +116,8 @@ class DashboardUrl(unittest.TestCase):
 
     def test_auth_is_mentioned(self):
         out = "\n".join(self.status._dashboard_lines(
-            {"dashboard": {"host": "1.2.3.4", "port": 8765, "auth": {"user": "domi"}}}))
-        self.assertIn("domi", out)
+            {"dashboard": {"host": "1.2.3.4", "port": 8765, "auth": {"user": "admin"}}}))
+        self.assertIn("admin", out)
 
     def test_missing_config_falls_back_to_defaults(self):
         out = "\n".join(self.status._dashboard_lines({}))
@@ -213,29 +213,29 @@ class FreshSessionId(unittest.TestCase):
         return f
 
     def test_project_dir_mapping(self):
-        names = [d.name for d in detect.claude_project_dirs("/Users/asistent/dev/app")]
-        self.assertIn("-Users-asistent-dev-app", names)
+        names = [d.name for d in detect.claude_project_dirs("/Users/alice/dev/app")]
+        self.assertIn("-Users-alice-dev-app", names)
 
     def test_symlinked_path_tries_both_forms(self):
         """On macOS /home/x resolves elsewhere; the literal form must still be tried."""
-        names = [d.name for d in detect.claude_project_dirs("/home/domi")]
-        self.assertIn("-home-domi", names)
+        names = [d.name for d in detect.claude_project_dirs("/home/alice")]
+        self.assertIn("-home-alice", names)
 
     def test_id_found_before_any_user_message(self):
         """Only a startup record — no `cwd` anywhere yet."""
         sid = "11111111-2222-3333-4444-555555555555"
-        self._transcript("/home/domi", sid,
+        self._transcript("/home/alice", sid,
                          ['{"type":"permission-mode","permissionMode":"default","sessionId":"%s"}' % sid])
-        got_sid, got_model = detect._claude_info_for_cwd("/home/domi")
+        got_sid, got_model = detect._claude_info_for_cwd("/home/alice")
         self.assertEqual(got_sid, sid)
         self.assertIsNone(got_model)   # no assistant turn yet → model comes from argv
 
     def test_model_read_once_the_session_answers(self):
         sid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-        self._transcript("/home/domi", sid, [
+        self._transcript("/home/alice", sid, [
             '{"type":"permission-mode","sessionId":"%s"}' % sid,
             '{"type":"assistant","message":{"model":"claude-fable-5-1"}}'])
-        got_sid, got_model = detect._claude_info_for_cwd("/home/domi")
+        got_sid, got_model = detect._claude_info_for_cwd("/home/alice")
         self.assertEqual(got_sid, sid)
         self.assertEqual(got_model, "Fable 5.1")
 
@@ -243,11 +243,11 @@ class FreshSessionId(unittest.TestCase):
         import time
         a = "aaaaaaaa-1111-2222-3333-444444444444"
         b = "bbbbbbbb-1111-2222-3333-444444444444"
-        fa = self._transcript("/home/domi", a, ['{"type":"permission-mode"}'])
+        fa = self._transcript("/home/alice", a, ['{"type":"permission-mode"}'])
         time.sleep(0.02)
-        fb = self._transcript("/home/domi", b, ['{"type":"permission-mode"}'])
-        first, _ = detect._claude_info_for_cwd("/home/domi")
-        second, _ = detect._claude_info_for_cwd("/home/domi", {first})
+        fb = self._transcript("/home/alice", b, ['{"type":"permission-mode"}'])
+        first, _ = detect._claude_info_for_cwd("/home/alice")
+        second, _ = detect._claude_info_for_cwd("/home/alice", {first})
         self.assertNotEqual(first, second)
         self.assertEqual({first, second}, {a, b})
 
@@ -263,8 +263,8 @@ class AntigravityPresence(unittest.TestCase):
     def test_id_read_from_the_lock_a_process_holds(self):
         orig = detect.open_files
         detect.open_files = lambda pids: [
-            "/home/domi/.gemini/antigravity-cli/log/cli.log",
-            "/home/domi/.gemini/antigravity-cli/presence/3d06ea18-306c-47f4-a173-3ed9a452dc05.lock",
+            "/home/alice/.gemini/antigravity-cli/log/cli.log",
+            "/home/alice/.gemini/antigravity-cli/presence/3d06ea18-306c-47f4-a173-3ed9a452dc05.lock",
         ]
         try:
             self.assertEqual(detect._antigravity_sid_from_presence([1]),
@@ -343,11 +343,11 @@ class DiscoverAgentsWiring(unittest.TestCase):
         self.orig = {n: getattr(detect, n) for n in
                      ("tmux_sessions", "_pane_pids", "_proc_table", "_codex_model",
                       "_session_cwd", "open_files", "_antigravity_info_for_cwd")}
-        detect.tmux_sessions = lambda: [{"name": "Domi - Agy", "created": 0}]
+        detect.tmux_sessions = lambda: [{"name": "Alice - Agy", "created": 0}]
         detect._pane_pids = lambda name: [42]
         detect._proc_table = lambda: ({42: "agy --dangerously-skip-permissions"}, {})
         detect._codex_model = lambda: None
-        detect._session_cwd = lambda name: "/home/domi"
+        detect._session_cwd = lambda name: "/home/alice"
         detect.open_files = lambda pids: [self.LOCK]
         # The workspace map has nothing yet — the situation right after launch.
         detect._antigravity_info_for_cwd = lambda cwd: (None, None)
@@ -358,7 +358,7 @@ class DiscoverAgentsWiring(unittest.TestCase):
 
     def test_fresh_agy_still_gets_its_conversation_id(self):
         agents = {a["name"]: a for a in detect.discover_agents(now=1000)}
-        self.assertEqual(agents["Domi - Agy"]["session_id"],
+        self.assertEqual(agents["Alice - Agy"]["session_id"],
                          "3d06ea18-306c-47f4-a173-3ed9a452dc05")
 
 

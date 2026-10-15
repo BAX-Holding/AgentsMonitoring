@@ -14,13 +14,13 @@ class Hardening(unittest.TestCase):
 
     def test_off_loopback_without_auth_refuses_to_start(self):
         with self.assertRaises(SystemExit):
-            dashboard.require_auth_or_die("100.75.92.58", {"dashboard": {}})
+            dashboard.require_auth_or_die("100.64.0.10", {"dashboard": {}})
         with self.assertRaises(SystemExit):
             dashboard.require_auth_or_die("0.0.0.0", {"dashboard": {"auth": {"user": "x"}}})
 
     def test_loopback_or_configured_auth_is_fine(self):
         dashboard.require_auth_or_die("127.0.0.1", {"dashboard": {}})
-        dashboard.require_auth_or_die("100.75.92.58", {"dashboard": {"auth": {"user": "lana", "pwhash": "ab" * 32}}})
+        dashboard.require_auth_or_die("100.64.0.10", {"dashboard": {"auth": {"user": "admin", "pwhash": "ab" * 32}}})
 
 
 if __name__ == "__main__":
