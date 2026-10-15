@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -35,11 +36,10 @@ def _launcher_path() -> Path:
     return config.state_dir() / MARKER
 
 
-def _write_launcher() -> Path:
+def _launcher_content() -> str:
     state = config.state_dir()
     log = state / "agentsmon.log"
-    path = _launcher_path()
-    path.write_text(f"""#!/bin/sh
+    return f"""#!/bin/sh
 # Agents Monitoring launcher — started by cron (@reboot + every minute). Idempotent: starts the
 # dashboard only if it isn't running, then runs one keepalive pass (a no-op if disabled / no agents).
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
@@ -56,9 +56,40 @@ if ! ( [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null 
   nohup "$PY" -m agentsmon dashboard >> "{log}" 2>&1 &
 fi
 "$PY" -m agentsmon keepalive >> "{log}" 2>&1
-""", encoding="utf-8")
-    path.chmod(0o755)
+"""
+
+
+def _write_launcher() -> Path:
+    path = _launcher_path()
+    # A cron shell may still be reading the old launcher: never truncate it in place.
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                     prefix=".launcher-", delete=False) as out:
+        staged = Path(out.name)
+        try:
+            out.write(_launcher_content())
+            out.flush()
+            os.fchmod(out.fileno(), 0o755)
+            os.replace(staged, path)
+        finally:
+            staged.unlink(missing_ok=True)
     return path
+
+
+def refresh_launcher() -> bool:
+    """Repair an installed cron launcher even after an update ran with OLD loaded code.
+
+    Do not install a service for manual users. The next cron tick uses the repaired
+    UID-scoped guard; no recursive launcher call or healthy dashboard restart is needed.
+    """
+    path = _launcher_path()
+    try:
+        current = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return False
+    if current == _launcher_content():
+        return False
+    _write_launcher()
+    return True
 
 
 def _dashboard_pids() -> list[int]:

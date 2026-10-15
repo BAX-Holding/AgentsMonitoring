@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Agents Monitoring one-command installer.
 # Usage:  curl -fsSL <raw-url>/install.sh | bash      (or run it from a clone)
+# Parse the entire installer before git pull can replace this very file.
+main() {
 set -euo pipefail
 NO_SETUP=0
 NO_PIP=0
@@ -112,3 +114,6 @@ say "Run it later with:  $HOW status   (add more bots anytime with:  $HOW add)"
 if [ "$NO_SETUP" -eq 0 ] && { : </dev/tty; } 2>/dev/null; then
   say "Starting setup…"; exec "${RUN[@]}" setup </dev/tty
 else say "Installed. Finish setup with: $HOW setup"; fi
+}
+# Keep the exit on this parsed line: never resume reading a replaced script tail.
+main "$@"; exit

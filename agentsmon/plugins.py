@@ -313,6 +313,5 @@ def collect(cfg,agents):
         if _cache and time.monotonic()-_cache[1]<30: return _cache[2]
         # No stale green row may remain actionable while refresh is stuck.
         result={k:[] for k in ('tables','columns','patches','hidden_sessions','hidden_services','errors','plugins')}
-        if m.plugins:
-            result['errors']=[{'name':'Plugins loading','detail':'Awaiting a fresh bounded check'}]
+        result['loading']=bool(m.plugins)
         return result

@@ -39,6 +39,22 @@ only the dashboard. Do not reset/delete agent state or recreate sessions. No des
 migration is introduced here; the uptime database schema is unchanged. Keep both checkouts until
 acceptance is complete. A review-stage private plugin directory can simply remain uninstalled.
 
+## Upgrading older cron installations
+
+An update command already in memory can still execute its old reload logic after pulling new
+code. Every new keepalive pass therefore compares the **existing** cron launcher with the current
+template and atomically replaces it when different. This also runs with agent keepalive disabled.
+A stale, unscoped launcher may skip this user's dashboard when another user's dashboard exists;
+the first pass repairs it and the next cron tick starts this user's dashboard. With the installed
+one-minute cron, allow up to two ticks after updating; no second update is required. Manual-only
+installations gain no launcher or cron registration. Failure to refresh remains a visible error.
+
+The installer can safely be run from `~/.agentsmon-src/install.sh`: its body is parsed before a
+pull replaces the script. Uninstall removes the unchanged `~/.local/bin/agentsmon` wrapper for
+this checkout/default clone; customized wrappers and symlinks are retained. Review/remove any
+installer-added PATH line in your shell rc files manually (those files are never rewritten by
+uninstall).
+
 ## Integrity and release maintenance
 
 `agentsmon/core-manifest.json` records every package file (excluding the manifest and Python

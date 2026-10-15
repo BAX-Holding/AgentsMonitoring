@@ -16,7 +16,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import config, detect
+from . import config, detect, service
 
 
 def _attempts_path() -> Path:
@@ -41,7 +41,8 @@ def _log(msg: str) -> None:
     line = f"{time.strftime('%F %T')} {msg}"
     print(line, flush=True)
     try:
-        (config.state_dir() / "keepalive.log").open("a", encoding="utf-8").write(line + "\n")
+        with (config.state_dir() / "keepalive.log").open("a", encoding="utf-8") as out:
+            out.write(line + "\n")
     except OSError:
         pass
 
@@ -152,10 +153,13 @@ def tick(cfg: dict) -> int:
 
 def run(loop: bool = False) -> int:
     cfg = config.load()
-    if not cfg.get("keepalive", {}).get("enabled", True):
-        return 0                       # keepalive disabled — restarts left to the user/another supervisor
     interval = cfg.get("keepalive", {}).get("interval_seconds", 60)
     while True:
+        # Dashboard boot persistence is independent of opt-in agent supervision.
+        if service.refresh_launcher():
+            _log("updated installed cron launcher")
+        if not cfg.get("keepalive", {}).get("enabled", True):
+            return 0                   # no agent restarts or heartbeat when disabled
         if _acquire_lock():
             try:
                 n = tick(cfg)

@@ -349,6 +349,7 @@ async function refresh(){
       const root=tables.children[i]; q(root,"h2").textContent=t.title;
       renderAgents(root,t.rows,t,d.columns||[]); initCollapse(root,t.id,i+1);
     });
+    document.getElementById("plugin-loading").hidden=!d.plugin_loading;
     const errors=document.getElementById("plugin-errors"); errors.replaceChildren();
     (d.plugin_errors||[]).forEach(p=>{
       const box=document.createElement("div"); box.className="mb-4 border border-rose-200 bg-rose-50 rounded-lg p-3";
@@ -408,7 +409,9 @@ refresh(); setInterval(refresh, POLL*1000);
 PAGE=PAGE.replace('AGENT_TABLES',
     AGENT_TABLE.replace('KEY','agents').replace('HIDDEN','').replace('TITLE','Persistent Agents')
         .replace('NOTE','tmux sessions running an agent, linked by their <code>--resume</code> session id')+
-    '<div id="plugin-tables"></div><div id="plugin-errors"></div>'+
+    '<div id="plugin-tables"></div>'+
+    '<div id="plugin-loading" role="status" hidden class="mb-4 border border-slate-200 bg-slate-50 text-slate-600 rounded-lg p-3">'
+    'Plugins loading: Awaiting a fresh bounded check</div><div id="plugin-errors"></div>'+
     '<template id="agent-table-tpl">'+AGENT_TABLE.replace('KEY','plugin').replace('HIDDEN','')
         .replace('TITLE','Agents').replace('NOTE','')+'</template>')
 
@@ -609,6 +612,7 @@ def _state() -> bytes:
     from .integrity import status as core_status
     data = {"time": int(time.time()), "agents": agents, "agent_tables": extra['tables'],
             "columns": extra['columns'], "plugin_errors": extra['errors'], "plugins": extra['plugins'],
+            "plugin_loading": extra.get('loading', False),
             "core": core_status(), "services": services}
     return json.dumps(data).encode()
 
@@ -654,8 +658,8 @@ def serve(host: str, port: int) -> None:
     except Exception:
         pass
     cfg = config.load()
-    print(f"Agents Monitoring dashboard → http://{host}:{port}  (Ctrl-C to stop)")
     server = make_server(host, port, cfg)
+    print(f"Agents Monitoring dashboard → http://{host}:{port}  (Ctrl-C to stop)")
     if cfg.get("services"):
         threading.Thread(target=_probe_loop, args=(threading.Event(),), daemon=True).start()
     write_pidfile()

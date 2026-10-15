@@ -2,11 +2,41 @@
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
+import stat
 import subprocess
 from pathlib import Path
 
 from . import config, service
+
+
+def _remove_cli_wrapper() -> bool:
+    """Remove only the unmodified wrapper produced by install.sh for this source.
+
+    Leave symlinks, other owners, custom scripts and wrappers for other checkouts alone.
+    """
+    path = Path.home() / ".local/bin/agentsmon"
+    try:
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_size > 8192:
+            return False
+        lines = path.read_text(encoding="utf-8").splitlines()
+        if len(lines) != 2 or lines[0] != "#!/bin/sh":
+            return False
+        args = shlex.split(lines[1])
+        if len(args) != 7 or args[:2] != ['exec', 'env'] or args[4:] != ['-m', 'agentsmon', '$@']:
+            return False
+        for source in (service._pythonpath(), str(Path.home() / '.agentsmon-src')):
+            expected = f'exec env PYTHONPATH="{source}" "{args[3]}" -m agentsmon "$@"'
+            if lines[1] == expected:
+                path.unlink()
+                return True
+    except FileNotFoundError:
+        pass
+    except (UnicodeError, ValueError):
+        pass                           # a custom/non-shell launcher, not ours
+    return False
 
 
 def run(yes: bool = False) -> int:
@@ -32,6 +62,10 @@ def run(yes: bool = False) -> int:
         subprocess.run(["pkill", "-u", str(os.getuid()), "-f", "--", pattern],
                        capture_output=True, timeout=10)
         print("  stopped running dashboard/keepalive")
+
+    if _remove_cli_wrapper():
+        print("  removed ~/.local/bin/agentsmon")
+    print("  Remove any Agents Monitoring PATH entry from your shell rc files manually; they were not edited.")
 
     for d in (config.DEFAULT_PATH.parent, Path.home() / ".local" / "state" / "agentsmon",
               Path.home() / ".agentsmon-src"):

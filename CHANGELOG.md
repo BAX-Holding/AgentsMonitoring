@@ -18,6 +18,12 @@
 
 ### Fixes and community review
 
+- Keepalive atomically refreshes an existing cron launcher, including when agent supervision
+  is disabled. This repairs the first upgrade executed by older updater code on shared hosts.
+- Installer parses its full body before a pull can overwrite its own file. Uninstall removes
+  an unmodified local CLI wrapper and suggests manual PATH cleanup without editing shell rc files.
+- Initial/expired plugin checks show neutral loading with no stale rows or actions. Actual
+  errors/timeouts stay red. Dashboard startup announces its URL only after auth/bind succeeds.
 - Uninstall uses PID-aware dashboard shutdown and a current-user, full-command keepalive
   match. Daemon Stop is also scoped to the current user, with patterns separated from options.
 - Headless installation without a controlling terminal succeeds and prints `agentsmon setup`.

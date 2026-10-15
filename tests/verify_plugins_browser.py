@@ -140,12 +140,36 @@ async def verify(args):
                 assert 'Supervisor unavailable' in await lower.inner_text()
                 assert 'bg-rose-500' in await lower.locator('.svc-dot').get_attribute('class')
                 assert 'Plugin timed out' in await page.locator('#plugin-errors').inner_text()
+                assert await page.locator('#plugin-errors .bg-rose-50').count()==1
                 assert 'Running' in await upper.inner_text()
                 extension['name']='<img src=x onerror="window.PWNED=1">'
                 await page.evaluate('refresh()')
                 assert await lower.locator('img').count()==0
                 assert await page.evaluate('window.PWNED || null') is None
                 await page.screenshot(path=str(args.out/'failure-isolation.png'),full_page=True)
+                # Expired/initial plugin data: neutral progress, no stale table or actions.
+                payload.update(agent_tables=[],columns=[],plugin_errors=[],plugin_loading=True)
+                await page.evaluate('refresh()')
+                loading=page.locator('#plugin-loading')
+                await loading.wait_for(state='visible')
+                assert 'Awaiting a fresh bounded check' in await loading.inner_text()
+                assert 'bg-slate-50' in await loading.get_attribute('class')
+                assert 'rose' not in await loading.get_attribute('class')
+                assert await page.locator('#plugin-errors').inner_text()==''
+                assert await page.locator('#plugin-tables [data-act]').count()==0
+                assert await page.locator('#plugin-tables section').count()==0
+                assert 'Running' in await upper.inner_text()
+                await page.wait_for_timeout(350)
+                await page.screenshot(path=str(args.out/'plugin-loading.png'),full_page=True)
+                # A real failure still renders red after the neutral state.
+                payload.update(plugin_loading=False,plugin_errors=[{'name':'Plugin failed','detail':'Plugin timed out'}])
+                await page.evaluate('refresh()')
+                assert not await loading.is_visible()
+                assert await page.locator('#plugin-errors .bg-rose-50').count()==1
+                assert 'Plugin timed out' in await page.locator('#plugin-errors').inner_text()
+                await page.wait_for_timeout(350)
+                await page.screenshot(path=str(args.out/'plugin-timeout.png'),full_page=True)
+                payload.update(agent_tables=[table],columns=[{'id':'usage:limits','title':'Usage'}])
                 # Two healthy samples in a day are minutes of observed uptime, not a whole day.
                 extension.update(name='Example Agent',alive=True,status='Running',status_detail='Ready')
                 table.update(up=True,error='')
@@ -173,7 +197,7 @@ async def verify(args):
                     await page.evaluate('refresh()');await page.wait_for_timeout(350)
                     await page.screenshot(path=str(args.out/'private-plugin.png'),full_page=True)
                 assert not errors,errors
-                print('PASS: daemon Running/latency tooltip, unhealthy statuses, shared columns/layout, reference geometry, usage, action routing, error isolation, HTML escaping, observed uptime.')
+                print('PASS: daemon Running/latency tooltip, unhealthy statuses, shared columns/layout, reference geometry, usage, action routing, error isolation, neutral plugin loading without stale actions, red timeouts, HTML escaping, observed uptime.')
             finally: await browser.close()
     finally: server.shutdown();server.server_close();thread.join(2)
 

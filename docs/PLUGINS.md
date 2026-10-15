@@ -115,8 +115,10 @@ inferred. Plugins must enforce their own lifecycle/idle checks server-side.
 ## Failure isolation and trust boundary
 
 Collection runs off the HTTP thread, concurrently in up to four workers. A cached result
-refreshes after ten seconds, and after thirty seconds unrefreshed rows disappear in favor
-of a loading/error notice. A crashed/timed-out plugin creates an error card; other results
+refreshes after ten seconds, and after thirty seconds unrefreshed rows and actions disappear
+in favor of a neutral loading notice (`plugin_loading` in `/api/state`). Loading is separate
+from `plugin_errors`; it does not report a failed check. A crashed/timed-out plugin creates
+a red error card after its bounded check completes; other results
 continue. Each worker is a subprocess with a separate process group, bounded time and
 1 MiB stdin/stdout, with descendant cleanup. Arbitrary plugin output/stderr is not logged.
 Each action uses another bounded worker. Unknown API versions fail visibly.

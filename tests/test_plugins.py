@@ -109,12 +109,15 @@ class PluginContract(unittest.TestCase):
         with patch.multiple(plugins,_manager=None,_signature=None,_cache=None,_refreshing=False):
             start=time.monotonic();data=plugins.collect(cfg,[])
             self.assertLess(time.monotonic()-start,.15)
-            self.assertTrue(data['errors'])
+            self.assertEqual(data['errors'],[])
+            self.assertTrue(data['loading'])
             deadline=time.monotonic()+3
             while plugins._refreshing and time.monotonic()<deadline: time.sleep(.02)
             data=plugins.collect(cfg,[])
             self.assertIn('timed out',data['errors'][0]['detail'])
+            self.assertFalse(data.get('loading',False))
             plugins._cache=('',time.monotonic()-31,{'tables':[{'up':True}]})
             data=plugins.collect(cfg,[])
             self.assertFalse(data['tables'])
+            self.assertTrue(data['loading'])
             while plugins._refreshing and time.monotonic()<deadline: time.sleep(.02)
