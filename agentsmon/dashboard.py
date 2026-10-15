@@ -571,7 +571,8 @@ def _agent_action(name: str, action: str) -> tuple[bool, str]:
             subprocess.run([tmux_bin, "kill-session", "-t", name], capture_output=True, timeout=10)
             return True, f"stopped {name}"
         pat = daemon.get("pattern") or daemon.get("binary") or name
-        subprocess.run(["pkill", "-f", pat], capture_output=True, timeout=10)
+        subprocess.run(["pkill", "-u", str(os.getuid()), "-f", "--", pat],
+                       capture_output=True, timeout=10)
         return True, f"stopped {name}"
     return False, f"unknown action '{action}'"
 

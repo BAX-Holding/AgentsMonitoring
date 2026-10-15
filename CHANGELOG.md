@@ -18,6 +18,8 @@
 
 ### Fixes and community review
 
+- Uninstall uses PID-aware dashboard shutdown and a current-user, full-command keepalive
+  match. Daemon Stop is also scoped to the current user, with patterns separated from options.
 - Headless installation without a controlling terminal succeeds and prints `agentsmon setup`.
 - Dashboard launcher and stop fallback are scoped to the current user. Updates stop via the
   PID-aware service helper and regenerate an existing launcher instead of broad `pkill`.

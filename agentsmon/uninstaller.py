@@ -23,9 +23,14 @@ def run(yes: bool = False) -> int:
     # 1) Remove the cron launcher lines, then stop the running dashboard.
     service.uninstall_cron()
     print("  removed cron launcher")
+    service.stop_dashboard()
     if shutil.which("pkill"):
-        subprocess.run(["pkill", "-f", "agentsmon dashboard"], capture_output=True)
-        subprocess.run(["pkill", "-f", "agentsmon keepalive"], capture_output=True)
+        # Match complete Python module/console-script invocations, not a shell merely
+        # mentioning keepalive. Both the cron one-shot and manual --loop are covered.
+        pattern = (r"^([^[:space:]]*/)?[Pp]ython[0-9.]* "
+                   r"(-m agentsmon|([^[:space:]]*/)?agentsmon) keepalive( --loop)?$")
+        subprocess.run(["pkill", "-u", str(os.getuid()), "-f", "--", pattern],
+                       capture_output=True, timeout=10)
         print("  stopped running dashboard/keepalive")
 
     for d in (config.DEFAULT_PATH.parent, Path.home() / ".local" / "state" / "agentsmon",
