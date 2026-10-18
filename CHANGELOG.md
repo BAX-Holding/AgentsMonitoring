@@ -15,9 +15,13 @@
 - Python 3.10–3.14 CI runs the standard-library test suite, lint and package install.
 - Retry transient git update failures three times without prompting. Preserve
   existing checkouts and unmarked non-git directories on failure.
+- Recognise legacy unmarked archives only at the default source path with the
+  expected project files and no symlinks. Protect other unmarked directories.
 - Mark archive installations so re-running the installer can update them using
   a fully staged replacement with rollback on failure, without changing config
   or history outside the source directory.
+- Refresh checked-hash Python bytecode before service reloads, so rapid
+  same-second updates and rollbacks cannot reuse a stale timestamp cache.
 
 ## 0.3.0 (2026-10-15)
 

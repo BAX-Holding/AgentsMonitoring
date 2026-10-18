@@ -96,6 +96,60 @@ class CleanInstall(unittest.TestCase):
                 self.assertEqual((source / 'sentinel').read_text(), 'previous release')
                 self.assertEqual(list(home.glob('.agentsmon-src.stage.*')), [])
 
+    def test_legacy_archive_without_marker_updates_from_home_and_source(self):
+        for from_source in (False, True):
+            with self.subTest(from_source=from_source), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                env = self.installer_fixture(home)
+                source = home / '.agentsmon-src'
+                (source / 'agentsmon').mkdir(parents=True)
+                (source / 'pyproject.toml').write_text('[project]\nname="agents-monitoring"\n')
+                (source / 'agentsmon/__init__.py').write_text('__version__ = "old"\n')
+                (source / 'obsolete.txt').write_text('old release')
+                self.archive_fixture(home, 'new')
+                result = self.run_installer(home, env, source if from_source else home)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('new', (source / 'agentsmon/__init__.py').read_text())
+                self.assertFalse((source / 'obsolete.txt').exists())
+                self.assertEqual((source / '.agentsmon-archive-install').read_text(),
+                                 'agentsmon-archive-v1\n')
+
+    def test_legacy_detection_refuses_incomplete_foreign_and_symlink_sources(self):
+        cases = ('missing_project', 'foreign_project', 'missing_init', 'symlink_source',
+                 'symlink_project', 'symlink_package', 'symlink_init', 'invalid_marker', 'git_file')
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                env = self.installer_fixture(home)
+                self.archive_fixture(home, 'new')
+                source = home / '.agentsmon-src'
+                (source / 'agentsmon').mkdir(parents=True)
+                project = source / 'pyproject.toml'
+                project.write_text('[project]\nname="agents-monitoring"\n')
+                init = source / 'agentsmon/__init__.py'
+                init.write_text('__version__ = "old"\n')
+                (source / 'sentinel').write_text('keep')
+                if case == 'missing_project':
+                    project.unlink()
+                elif case == 'foreign_project':
+                    project.write_text('[project]\nname="something-else"\n')
+                elif case == 'missing_init':
+                    init.unlink()
+                elif case == 'invalid_marker':
+                    (source / '.agentsmon-archive-install').write_text('unknown-marker')
+                elif case == 'git_file':
+                    (source / '.git').write_text('gitdir: elsewhere')
+                else:
+                    target = {'symlink_source': source, 'symlink_project': project,
+                              'symlink_package': source / 'agentsmon', 'symlink_init': init}[case]
+                    outside = home / 'outside'
+                    target.rename(outside)
+                    target.symlink_to(outside)
+                result = self.run_installer(home, env)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertEqual((source / 'sentinel').read_text(), 'keep')
+                self.assertIn('preserved', result.stderr)
+
     def test_git_pull_retries_noninteractively_after_transient_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)

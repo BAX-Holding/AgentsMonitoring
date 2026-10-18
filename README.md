@@ -90,9 +90,11 @@ Archive installations created by this installer carry an
 `.agentsmon-archive-install` marker. Re-run the installer to update them: it
 downloads and checks the new source beside the old directory, then replaces it
 by renaming, restoring the previous directory if replacement fails. Configuration
-and history outside the source directory remain untouched. An unmarked non-git
-directory (including older archive installs) is preserved and reported as an
-error; back it up and move it aside explicitly before a fresh installation.
+and history outside the source directory remain untouched. Older unmarked archives
+are recognised only at `~/.agentsmon-src`, with an `agents-monitoring` project in
+`pyproject.toml`, `agentsmon/__init__.py`, no `.git` and no symlinks. Other unmarked
+non-git directories are preserved and reported as an error; back them up and move
+them aside explicitly before a fresh installation.
 
 …or from a clone:
 

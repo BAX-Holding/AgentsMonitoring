@@ -32,6 +32,8 @@ def _summary(src, before: str, pull_output: str) -> str:
 
 
 def run() -> int:
+    # Keep this helper loaded across a pull/rollback to a release predating it.
+    from . import service
     src = Path.home() / ".agentsmon-src"
     if not (src / ".git").is_dir():
         print("No ~/.agentsmon-src clone found — update manually (git pull / pip install -U).")
@@ -43,6 +45,9 @@ def run() -> int:
         print((r.stdout + r.stderr).strip()[:800] or "(no output)")
         return 1
     print(_summary(src, before, r.stdout))
+    # Invalidate same-second, same-size bytecode BEFORE loading updated modules.
+    # The launcher repeats this for upgrades initiated by older updater code.
+    service.refresh_bytecode(src / 'agentsmon')
     # If running from site-packages (a pip install), reinstall from the refreshed clone.
     if str(src.resolve()) not in str(Path(agentsmon.__file__).resolve()):
         if subprocess.run([sys.executable, "-m", "pip", "install", "--user", "--upgrade", str(src)],

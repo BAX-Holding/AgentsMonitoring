@@ -1,5 +1,5 @@
 {
-  "content_id": "7b0d78093d67ff114d3082d7b750c87f5e61cf3ee97477bb7664da200a22b6c3",
+  "content_id": "f56a05f55b0869a5b549e35df920889ccc8a3c9022f2ec4cc55b6c2a26adbcac",
   "files": {
     "__init__.py": "4785cccb32bf05716629406cbe2dc1783c9d794b229669f24ad4ee67c621bbb9",
     "__main__.py": "57ed98fd45acf4852c17cdf37c205a433dc612f09bb13cdb5cadc5698437734e",
@@ -13,11 +13,11 @@
     "plugin_worker.py": "407c3054cfba3429b5f1c7cf28413d12a6b6a12eb0f49de9d23135c2daf4dedb",
     "plugins.py": "68815d1560a82716caa1b651f5c6d2066ebc6e2a593bedc58d0dc2c80f3f2222",
     "probe.py": "89c803810394351a6dee1e5f85ed4784856cd98dc6f1782405b3ec4f8ab479f8",
-    "service.py": "9e7f4c0c87e2be6df9f8588ff926c4a2ad8f8c13c3f1da7fcc90ed5077b4cc29",
+    "service.py": "8e5ff67f36e3eb2616d3ceecc88b600f1b006bc8702dac4aaf4f4f0d778bd305",
     "static/tailwind.js": "176e894661aa9cdc9a5cba6c720044cbbf7b8bd80d1c9a142a7c24b1b6c50d15",
     "status.py": "93ec57cb9be2d6234cbaaf421844bb00a80a8d2883a8633225ab27a7410d5d85",
     "uninstaller.py": "c149b57897c91322abcfbf3a41e47b1fd37127212f0f6f9de5f9813af14a5b26",
-    "updater.py": "b5da190e63ca8045e07f4179db0d341f1551f161020747d2c9fee4d32be00718",
+    "updater.py": "e5f307f0d5eaac5f29359b90ddd7b0e183906b66df65f9c4c494a0c2220b34f2",
     "usage_plugin.py": "d30e2fd2ff35c486cabed7dc7913028fffddee4ab9a8cb9c9c3ecee83ca5c72a",
     "wizard.py": "1ddc380aefffd0dfb9c28ab6c56707a99f62c8e4bf8a8d29c28c15cdac5aa798"
   },

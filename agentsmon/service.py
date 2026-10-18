@@ -63,7 +63,21 @@ fi
 """
 
 
+def refresh_bytecode(package: Path) -> None:
+    """A rapid git rollback can preserve a .pyc's integer mtime and source size.
+
+    Force checked-hash caches before launching new code, including the first
+    upgrade invoked by an old, already-loaded updater. No source files change.
+    """
+    import compileall
+    import py_compile
+    if not compileall.compile_dir(str(package), quiet=1, force=True,
+                                  invalidation_mode=py_compile.PycInvalidationMode.CHECKED_HASH):
+        raise RuntimeError('Could not refresh Python bytecode; service reload aborted')
+
+
 def _write_launcher() -> Path:
+    refresh_bytecode(Path(agentsmon.__file__).resolve().parent)
     path = _launcher_path()
     # A cron shell may still be reading the old launcher: never truncate it in place.
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,

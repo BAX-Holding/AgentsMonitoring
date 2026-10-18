@@ -42,21 +42,34 @@ command -v tmux >/dev/null || say "note: tmux not found — agents run in tmux, 
 
 # Get the code (clone unless already inside it).
 if [ -f pyproject.toml ] && grep -q "agents-monitoring" pyproject.toml 2>/dev/null &&
-   [ ! -e .agentsmon-archive-install ]; then
+   [ ! -e .agentsmon-archive-install ] && [ ! -L .agentsmon-archive-install ] &&
+   { [ "$(pwd -P)" != "$(cd "$HOME" && pwd -P)/.agentsmon-src" ] || [ -e .git ]; }; then
   SRC="$(pwd)"; say "Installing from current directory"
 else
   SRC="${HOME}/.agentsmon-src"
   # Re-running from inside our archive must refresh it too, not reinstall old code.
-  if [ -f .agentsmon-archive-install ]; then SRC="$(pwd -P)"; cd "$HOME"; fi
+  if [ -f .agentsmon-archive-install ]; then SRC="$(pwd -P)"; fi
+  cd "$HOME"
   # git first — a real clone keeps `agentsmon update` working. But git over HTTPS can be
   # refused where plain HTTPS is fine: from a datacentre IP that GitHub rate-limits for
   # anonymous git, a PUBLIC repo answers 401 and git stops to ask for a password. On a fresh
   # server that is the user's first impression of the tool, and an installer must never block
   # on a prompt, so fall back to the source archive.
   is_archive_install() {
-    [ -d "$SRC" ] && [ ! -L "$SRC" ] &&
+    [ -d "$SRC" ] && [ ! -L "$SRC" ] || return 1
+    [ ! -e "$SRC/.git" ] && [ ! -L "$SRC/.git" ] || return 1
+    if [ -e "$SRC/.agentsmon-archive-install" ] || [ -L "$SRC/.agentsmon-archive-install" ]; then
       [ -f "$SRC/.agentsmon-archive-install" ] && [ ! -L "$SRC/.agentsmon-archive-install" ] &&
-      [ "$(cat "$SRC/.agentsmon-archive-install")" = agentsmon-archive-v1 ]
+        [ "$(cat "$SRC/.agentsmon-archive-install")" = agentsmon-archive-v1 ]
+    else
+      # Old installers wrote no marker. Recognise only their default, intact
+      # source tree; never infer ownership of arbitrary folders or symlinks.
+      [ "$SRC" = "${HOME}/.agentsmon-src" ] &&
+        [ -f "$SRC/pyproject.toml" ] && [ -f "$SRC/agentsmon/__init__.py" ] &&
+        grep -q 'agents-monitoring' "$SRC/pyproject.toml" || return 1
+      links="$(find "$SRC" -type l -print -quit)" || return 1
+      [ -z "$links" ]
+    fi
   }
   fetch_tarball() (
     say "Fetching the source archive (no git)"
