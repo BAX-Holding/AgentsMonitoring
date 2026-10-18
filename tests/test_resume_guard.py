@@ -1,0 +1,46 @@
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from agentsmon import config, dashboard, identity, keepalive
+
+
+class ResumeGuard(unittest.TestCase):
+    SID = '11111111-1111-4111-8111-111111111111'
+
+    def test_pin_survives_process_exit_and_preserves_exact_conversation(self):
+        agent = {'name':'Writer','kind':'codex','cwd':'/work','identity_required':True,'restart':''}
+        live = [{**agent, 'alive':True,'session_id':self.SID,'resume_cmd':'codex resume '+self.SID}]
+        with tempfile.TemporaryDirectory() as d, patch.object(config,'state_dir',return_value=Path(d)):
+            pins = identity.pin_sessions({'agents':[agent]}, live)
+            safe = identity.safe_restart(agent, [], pins)
+            self.assertIn('resume '+self.SID, safe['restart'])
+            self.assertEqual((Path(d)/'session-pins.json').stat().st_mode & 0o777, 0o600)
+            # An unresolved live process must invalidate its old pin.
+            live[0].update(session_id=None, resume_cmd=None)
+            pins = identity.pin_sessions({'agents':[agent]}, live)
+            self.assertIsNone(identity.safe_restart(agent, live, pins))
+            self.assertEqual(pins, {})
+
+    def test_ambiguous_dashboard_restart_does_not_kill_or_enable(self):
+        agent = {'name':'Writer','kind':'codex','cwd':'/work','restart':'codex --continue'}
+        cfg = {'agents':[agent]}
+        with tempfile.TemporaryDirectory() as d, patch.object(config,'state_dir',return_value=Path(d)), \
+             patch.object(config,'load',return_value=cfg), \
+             patch.object(dashboard.detect,'discover_agents',return_value=[
+                 {**agent,'alive':True,'session_id':None,'resume_cmd':None}]), \
+             patch.object(dashboard,'_set_enabled') as enabled, \
+             patch.object(keepalive,'_start') as start:
+            ok, message = dashboard._agent_action('Writer','restart')
+        self.assertFalse(ok)
+        self.assertIn('identity', message)
+        enabled.assert_not_called()
+        start.assert_not_called()
+
+    def test_configured_resume_options_are_preserved(self):
+        old = '22222222-2222-4222-8222-222222222222'
+        agent = {'name':'Writer','restart':f'codex --model example resume {old}','cwd':'/work'}
+        row = {'name':'Writer','alive':True,'session_id':self.SID,'resume_cmd':'codex resume '+self.SID}
+        safe = identity.safe_restart(agent, [row])
+        self.assertEqual(safe['restart'], f'codex --model example resume {self.SID}')

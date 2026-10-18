@@ -33,6 +33,57 @@ tmux sessions  ⇄  Agents Monitoring  ⇄  status page + keepalive
 
 ## Quick start
 
+### Safe conversation ownership (0.3.2)
+
+Agents sharing a directory must have independent conversation IDs. Detection uses
+explicit resume arguments, a transcript/presence file held by the process, or an
+unambiguous creation timestamp during a fresh process's first minute. It never
+chooses the newest conversation solely because the working directory matches.
+An uncertain ID remains blank and automatic resume is blocked with a diagnostic.
+New agents are pinned in the local state directory once their identity is proven.
+Resume explicitly in tmux if an older session cannot be identified safely.
+
+`agentsmon new` always lists the same agent types in the same order. Missing CLIs
+are marked, invalid input is retried, and the final choice must be confirmed.
+Besides PATH, common `~/.local/bin`, `~/.npm-global/bin` and `/opt/homebrew/bin`
+installations are detected. Stopped/disabled configured names are still reserved.
+
+### Daemons owned by a service manager
+
+`agentsmon add` discovers user systemd ownership (including wrapped Hermes
+gateways) and uses the unit for restart/stop. Selected units are enabled and
+started; own-user lingering is attempted without sudo. If policy denies it,
+the CLI prints the exact `loginctl enable-linger USER` command for an administrator.
+`doctor` checks unit enablement and lingering. Calls under `su` fill missing
+XDG/DBus variables from the existing `/run/user/<uid>` directory.
+On macOS, detected launchd jobs use `bootout`/`kickstart`, with their original
+plist used to bootstrap a previously unloaded job. No parallel standalone daemon
+is started when a service manager owns it.
+See [systemctl](https://www.freedesktop.org/software/systemd/man/latest/systemctl.html)
+and [loginctl](https://www.freedesktop.org/software/systemd/man/latest/loginctl.html).
+
+### Optional bridge registration API
+
+Each Agent2Telegram config gets its own daemon and availability card. Integrators
+can register without prompts or restarting the dashboard:
+
+```bash
+agentsmon add --non-interactive \
+  --bridge-config "$HOME/.config/agent2telegram/example.json" \
+  --bridge-python "/absolute/path/to/venv/bin/python" \
+  --bridge-state "$HOME/.local/state/agent2telegram-example" \
+  --bridge-pythonpath "/absolute/path/to/source"
+```
+
+The last two flags are optional. Repeated registration and later interactive
+`add` remain idempotent. Only paths and the restart command are stored; bot tokens
+are never copied. Disabled entries stay disabled. Registration does not install
+boot services; use `agentsmon setup` if monitoring is not running yet.
+
+Keep the dashboard on localhost by default. HTTP Basic Auth over unencrypted
+HTTP exposes credentials on the network; use an SSH tunnel or Tailscale HTTPS
+before making it reachable remotely.
+
 ### Prerequisites
 
 **Ubuntu 22.04 / 24.04** (run the installer as your normal user, not root):

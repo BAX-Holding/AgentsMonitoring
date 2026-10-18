@@ -121,12 +121,25 @@ def tick(cfg: dict) -> int:
     procs, children = detect._proc_table()
     restarts = 0
     attempts = _load_attempts()
+    from . import identity
+    live = detect.discover_agents(config.agent_matches(cfg)) if any(
+        identity.requires_pin(a) for a in cfg.get('agents', [])) else []
+    pins = identity.pin_sessions(cfg, live) if live else {}
+    if not live:
+        try:
+            pins = json.loads((config.state_dir()/'session-pins.json').read_text())
+        except (OSError, ValueError):
+            pass
     for a in cfg.get("agents", []):
         if not a.get("enabled", True):
             continue
         name = a["name"]
         exists, alive = _alive(name, a.get("match", ""), sessions, children, procs)
         if alive:
+            if a.get('kind') == 'claude-code' or a.get('match') == 'claude':
+                from .dialogs import dismiss_optional_renderer
+                if dismiss_optional_renderer(name):
+                    _log(f"agent '{name}': declined the known optional fullscreen renderer dialog")
             attempts.pop(name, None)          # recovered → clear the failure counter
             continue
         n = attempts.get(name, 0) + 1
@@ -135,19 +148,25 @@ def tick(cfg: dict) -> int:
         # the pane is stuck (a half-dead agent + a bare shell), so kill + recreate the session for a
         # clean launch instead of send-keys'ing into the mess forever.
         recreate = exists and n >= 2
+        safe = identity.safe_restart(a, live, pins)
+        if safe is None:
+            _log(f"agent '{name}': restart blocked – exact conversation identity is unavailable")
+            continue
         _log(f"agent '{name}' {'dead in session' if exists else 'session missing'} → "
              f"{'recreating session' if recreate else 'restarting'} (attempt {n})")
-        _start(a, tmux_bin, recreate=recreate)
+        _start(safe, tmux_bin, recreate=recreate)
         restarts += 1
     _save_attempts(attempts)
     for d in detect.daemon_status(cfg.get("daemons", [])):
         spec = next((x for x in cfg.get("daemons", []) if x.get("name") == d["name"]), {})
         if not spec.get("enabled", True):
             continue                       # explicitly stopped from the dashboard — don't revive it
-        if not d["up"] and spec.get("restart"):
+        if not d["up"] and (spec.get("restart") or spec.get('manager')):
             _log(f"daemon '{d['name']}' down → restart")
-            subprocess.run(spec["restart"], shell=True, capture_output=True, timeout=30)
-            restarts += 1
+            from . import managed
+            ok, message = managed.action(spec, 'restart')
+            _log(message)
+            restarts += int(ok)
     return restarts
 
 

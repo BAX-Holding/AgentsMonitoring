@@ -22,7 +22,12 @@ def main(argv=None) -> int:
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("setup", help="interactive setup wizard")
     sub.add_parser("new", help="create a new agent (pick type + name), launch it, and monitor it")
-    sub.add_parser("add", help="detect and add newly-running agents/daemons (no full re-setup)")
+    add = sub.add_parser("add", help="detect and add newly-running agents/daemons (no full re-setup)")
+    add.add_argument('--non-interactive', action='store_true', help='register one Agent2Telegram bridge without prompts')
+    add.add_argument('--bridge-config')
+    add.add_argument('--bridge-python', help='absolute path to the bridge Python interpreter')
+    add.add_argument('--bridge-pythonpath', default='')
+    add.add_argument('--bridge-state', default='')
     sub.add_parser("update", help="pull the latest code and reload (no re-setup)")
     sub.add_parser("status", help="print live status")
     ka = sub.add_parser("keepalive", help="restart anything that died")
@@ -55,6 +60,11 @@ def main(argv=None) -> int:
         from . import wizard
         return wizard.new()
     if args.command == "add":
+        if args.non_interactive:
+            if not args.bridge_config or not args.bridge_python:
+                p.error('--non-interactive requires --bridge-config and --bridge-python')
+            from . import bridges
+            return bridges.add_noninteractive(args)
         from . import wizard
         return wizard.add()
     if args.command == "update":

@@ -503,15 +503,11 @@ def _agents_state(cfg: dict) -> list[dict]:
             a["label"] = ov["tag"]
         if ov.get("vendor"):
             a["vendor"] = ov["vendor"]
-        if ov.get("restart"):
-            a["resume_cmd"] = ov["restart"]
-            # A freshly re-exec'd agent often drops the id from its argv, so detection finds
-            # nothing and the column showed "— none" even though we know the id: it is right
-            # there in the configured resume command (reported 2026-09-01).
-            if not a.get("session_id"):
-                m = detect.UUID_RE.search(ov["restart"])
-                if m:
-                    a["session_id"] = m.group(0)
+        if ov.get("restart") and not a.get('identity_conflict') and a.get('session_id'):
+            from .identity import explicit_id
+            old = explicit_id(ov['restart'], detect.UUID_RE)
+            if old == a['session_id']:
+                a['resume_cmd'] = ov['restart']
     agents = detect.pinned_agents(cfg.get("pinned_daemons", [])) + tmux
     # Telegram deep-link icon. Two sources, explicit wins:
     #  1) an explicit `telegram` field on an agent/daemon config entry (for daemons with their OWN
@@ -558,27 +554,44 @@ def _agent_action(name: str, action: str) -> tuple[bool, str]:
     daemon = next((d for d in cfg.get("daemons", []) if d.get("name") == name), None)
     if not agent and not daemon:
         return False, f"unknown agent '{name}'"
+    if daemon and not daemon.get('manager'):
+        from . import managed, wizard
+        owner = managed.discover(daemon)
+        if owner:
+            # bootout removes the live PID. Remember its owner before stopping,
+            # so a later restart cannot fall back to a standalone command.
+            try:
+                raw = json.loads(config.DEFAULT_PATH.read_text())
+                entry = next(d for d in raw['daemons'] if d['name'] == name)
+                entry['manager'] = owner
+                if not wizard._write_json(config.DEFAULT_PATH, raw):
+                    raise OSError('save failed')
+            except (OSError, ValueError, KeyError, StopIteration):
+                return False, 'Could not preserve the service owner; action refused.'
+            daemon = {**daemon, 'manager':owner}
     if action == "restart":
+        if agent:
+            from . import identity
+            live = detect.discover_agents(config.agent_matches(cfg))
+            pins = identity.pin_sessions(cfg, live)
+            agent = identity.safe_restart(agent, live, pins)
+            if agent is None:
+                return False, 'Restart blocked: exact conversation identity is unavailable.'
         # Re-enable (in case it was stopped) and relaunch fresh so it picks up new config (e.g. MCP).
         _set_enabled(name, True)
         if agent:
             keepalive._start(agent, tmux_bin, recreate=True)   # kill session + recreate + resume cmd
             return True, f"restarting {name}"
-        cmd = daemon.get("restart")
-        if not cmd:
-            return False, f"{name} has no restart command"
-        subprocess.run(cmd, shell=True, capture_output=True, timeout=30)
-        return True, f"restarting {name}"
+        from . import managed
+        return managed.action(daemon, 'restart')
     if action == "stop":
         # Disable first so keepalive won't revive it, then kill the session / process.
         _set_enabled(name, False)
         if agent:
             subprocess.run([tmux_bin, "kill-session", "-t", name], capture_output=True, timeout=10)
             return True, f"stopped {name}"
-        pat = daemon.get("pattern") or daemon.get("binary") or name
-        subprocess.run(["pkill", "-u", str(os.getuid()), "-f", "--", pat],
-                       capture_output=True, timeout=10)
-        return True, f"stopped {name}"
+        from . import managed
+        return managed.action(daemon, 'stop')
     return False, f"unknown action '{action}'"
 
 

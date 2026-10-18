@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import os
-import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -29,18 +29,15 @@ MATCH_KEYWORD = {"claude-code": "claude", "codex": "codex", "antigravity": "agy"
                  "aider": "aider", "gemini": "gemini"}
 
 #: For `agentsmon new` — create a brand-new agent. Per kind: the CLI binary to check, a human
-#: label, the fresh launch command, and the keepalive restart command (for Claude we resume the
-#: most recent conversation with --continue, so a restart keeps its context without needing an id).
+#: label and fresh launch command. Conversation-based agents only become restartable
+#: after an exact identity has been observed and pinned.
 AGENT_TYPES = [
     {"kind": "claude-code", "label": "Claude Code", "bin": "claude",
-     "launch": "claude --dangerously-skip-permissions",
-     "restart": "claude --continue --dangerously-skip-permissions"},
+     "launch": "claude --dangerously-skip-permissions"},
     {"kind": "codex", "label": "Codex", "bin": "codex",
-     "launch": "codex --dangerously-bypass-approvals-and-sandbox",
-     "restart": "codex --dangerously-bypass-approvals-and-sandbox"},
+     "launch": "codex --dangerously-bypass-approvals-and-sandbox"},
     {"kind": "antigravity", "label": "Antigravity", "bin": "agy",
-     "launch": "agy --dangerously-skip-permissions",
-     "restart": "agy --continue --dangerously-skip-permissions"},
+     "launch": "agy --dangerously-skip-permissions"},
     {"kind": "aider", "label": "Aider", "bin": "aider", "launch": "aider", "restart": "aider"},
     {"kind": "gemini", "label": "Gemini", "bin": "gemini", "launch": "gemini", "restart": "gemini"},
 ]
@@ -150,10 +147,49 @@ def _auto_restart(a: dict) -> str:
     if not tpl:
         return ""
     sid = a.get("session_id")
+    if a.get('identity_conflict'):
+        return ''
     if sid:
-        return tpl.replace("{id}", sid)
-    # No session id → drop the resume/conversation argument, keep the base launch.
-    return re.sub(r"\s*(--resume|resume|--conversation)\s*\{id\}", "", tpl).strip()
+        command = tpl.replace("{id}", sid)
+        binary, _, rest = command.partition(' ')
+        return shlex.quote(find_cli(binary) or binary) + (' '+rest if rest else '')
+    return '' if '{id}' in tpl else tpl
+
+
+def find_cli(binary):
+    found = shutil.which(binary)
+    if found:
+        return os.path.abspath(found)
+    for folder in (Path.home()/'.local/bin', Path.home()/'.npm-global/bin', Path('/opt/homebrew/bin')):
+        candidate = folder/binary
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
+def choose_agent():
+    choices = [{**t, 'executable':find_cli(t['bin'])} for t in AGENT_TYPES]
+    for i, entry in enumerate(choices, 1):
+        missing = ' (not installed / not on PATH)' if not entry['executable'] else ''
+        print(f"  [{i}] {entry['label']}{missing}")
+    while True:
+        try:
+            value = input('\nNumber (required; Ctrl-C to cancel): ').strip()
+        except EOFError:
+            return None
+        if not value.isdigit() or not 1 <= int(value) <= len(choices):
+            print('Choose an available agent by its displayed number.')
+            continue
+        selected = choices[int(value)-1]
+        if not selected['executable']:
+            print('That CLI is unavailable. Check PATH or open a new terminal after installing it.')
+            continue
+        return selected
+
+
+def name_taken(name, cfg, sessions):
+    return name in ({s['name'] for s in sessions} | {x.get('name') for key in
+                     ('agents','daemons','services','pinned_daemons') for x in cfg.get(key, [])})
 
 
 def primary_ip() -> str:
@@ -179,6 +215,7 @@ COMMON_DAEMONS = [
     # matches only the old form (the new one has `hermes_cli.main gateway`, no "hermes gateway"),
     # so we alternate. Neither form matches the OpenClaw node gateway (`…/index.js gateway`).
     {"name": "Hermes", "pattern": r"hermes gateway run|hermes_cli\.main gateway",
+     "unit_hint": "hermes-gateway.service",
      "binary": "hermes", "name_color": "gold",
      "health_url": "http://127.0.0.1:8642/health",
      "restart": "nohup hermes gateway run --replace > ~/hermes.log 2>&1 &"},
@@ -188,44 +225,6 @@ COMMON_DAEMONS = [
 def _running(pattern: str) -> bool:
     return bool(pattern) and subprocess.run(["pgrep", "-f", pattern],
                                             capture_output=True).returncode == 0
-
-
-def _bridge_restart_cmd() -> str | None:
-    """Capture the running Agent2Telegram bridge → a nohup restart command. Critically we also
-    capture the env it relies on (PYTHONPATH for a run-from-clone install, AGENT2TELEGRAM_CONFIG)
-    from /proc/<pid>/environ — the command line alone misses those, so the restart would fail
-    with 'No module named agent2telegram' after a reboot."""
-    out = subprocess.run(["pgrep", "-af", "agent2telegram run"], capture_output=True, text=True)
-    for line in out.stdout.splitlines():
-        parts = line.split(None, 1)
-        if len(parts) != 2 or "agent2telegram run" not in parts[1]:
-            continue
-        pid, cmd = parts[0], parts[1]
-        env_prefix = ""
-        try:
-            raw = Path(f"/proc/{pid}/environ").read_text("utf-8").split("\0")
-            envd = dict(e.split("=", 1) for e in raw if "=" in e)
-            for k in ("PYTHONPATH", "AGENT2TELEGRAM_CONFIG"):
-                if envd.get(k):
-                    env_prefix += f'{k}="{envd[k]}" '
-        except (OSError, ValueError):
-            pass
-        log = "$HOME/.local/state/agentsmon/bridge.log"
-        # Set env via `env` AFTER nohup. `nohup PYTHONPATH=... cmd` is broken — nohup would treat
-        # the VAR=val as the command name and fail; `nohup env VAR=val cmd` is correct.
-        prefix = f"env {env_prefix}" if env_prefix else ""
-        return f"nohup {prefix}{cmd} >> {log} 2>&1 &"
-    return None
-
-
-def _telegram_bridge_service() -> dict | None:
-    """If an Agent2Telegram bridge is running, build a 'Telegram Bridge Status' availability card.
-    Latency = round-trip to the Telegram API. We deliberately probe a **token-less** endpoint so
-    no bot token is ever written into this tool's config (it would leak via greps/screenshots)."""
-    if not _running("agent2telegram run"):
-        return None
-    return {"name": "Telegram Bridge Status", "process": "agent2telegram run",
-            "health_url": "https://api.telegram.org/"}
 
 
 def _parse_selection(text: str, n: int) -> set:
@@ -311,7 +310,8 @@ def _agent_entry(a: dict) -> dict:
             "match": MATCH_KEYWORD.get(a["kind"], a["kind"]),
             "restart": _auto_restart(a),
             "cwd": detect._session_cwd(a["name"]) or str(Path.home()),
-            "enabled": True}
+            "enabled": True, 'identity_required':a['kind'] in detect.RESUME_TEMPLATES,
+            'kind':a['kind'], 'session_id':a.get('session_id')}
 
 
 #: The system-wide availability card. It's synthetic — not tied to any single component — and is
@@ -360,7 +360,13 @@ def _daemon_entries(d: dict) -> tuple:
     own availability card — their health folds into the synthetic Multi-Agent System card; they
     just appear as a highlighted row at the top of Persistent Agents (with live model + colour)."""
     daemon = dict(d)
+    from . import managed
+    owner = managed.discover(d)
+    if owner:
+        daemon['manager'] = owner
     pinned = {"name": d["name"], "process": d["pattern"]}
+    if owner:
+        pinned['manager'] = owner
     if d.get("health_url"):
         pinned["health_url"] = d["health_url"]
     if d.get("name_color"):
@@ -381,10 +387,16 @@ def _scan_candidates(known: set) -> list:
         if a["name"] not in known:
             out.append({"kind": "agent", "obj": a, "display": f"{a['name']}  →  {a['label']}"})
     for d in COMMON_DAEMONS:
+        from . import managed
+        owner = managed.discover(d)
         running = _running(d["pattern"])
-        if (running or shutil.which(d.get("binary", ""))) and d["name"] not in known:
-            out.append({"kind": "daemon", "obj": d,
+        if (owner or running or find_cli(d.get("binary", ""))) and d["name"] not in known:
+            out.append({"kind": "daemon", "obj": {**d, **({'manager':owner} if owner else {})},
                         "display": f"{d['name']}  (daemon{'' if running else ', not running'})"})
+    from . import bridges
+    for bridge in bridges.candidates():
+        if bridge['name'] not in known:
+            out.append({'kind':'bridge', 'obj':bridge, 'display':bridge['name']})
     return out
 
 
@@ -403,9 +415,15 @@ def add() -> int:
     for key in ("agents", "daemons", "services", "pinned_daemons"):
         known |= {x.get("name") for x in cfg.get(key, []) if x.get("name")}
     candidates = _scan_candidates(known)
-    tb = _telegram_bridge_service()
-    if tb and tb["name"] not in known:
-        candidates.append({"kind": "bridge", "obj": tb, "display": "Telegram Bridge Status"})
+    from . import managed
+    for current in cfg.get('daemons', []):
+        defaults = next((d for d in COMMON_DAEMONS if d['name'] == current.get('name')), {})
+        owner = managed.discover({**defaults, **current})
+        if owner and owner.get('type') == 'systemd':
+            props = managed.properties(owner['unit'])
+            if not current.get('manager') or props.get('UnitFileState') != 'enabled' or props.get('ActiveState') != 'active':
+                candidates.append({'kind':'daemon', 'obj':{**current, 'manager':owner},
+                                   'display':current['name']+' (repair user-service supervision)'})
     if not candidates:
         print("Nothing new — everything detected is already monitored. ✓")
         return 0
@@ -421,14 +439,18 @@ def add() -> int:
             cfg.setdefault("agents", []).append(_agent_entry(c["obj"]))
         elif c["kind"] == "daemon":
             dmn, pin = _daemon_entries(c["obj"])
-            cfg.setdefault("daemons", []).append(dmn)
-            cfg.setdefault("pinned_daemons", []).append(pin)
+            if dmn.get('manager'):
+                from . import managed
+                ok, notes = managed.activate(dmn['manager'])
+                for note in notes:
+                    print(note)
+                if not ok:
+                    return 1
+            cfg['daemons'] = [d for d in cfg.get('daemons', []) if d.get('name') != dmn['name']] + [dmn]
+            cfg['pinned_daemons'] = [d for d in cfg.get('pinned_daemons', []) if d.get('name') != pin['name']] + [pin]
         elif c["kind"] == "bridge":
-            cfg.setdefault("services", []).append(c["obj"])
-            r = _bridge_restart_cmd()
-            if r:
-                cfg.setdefault("daemons", []).append({"name": "Telegram Bridge",
-                                                      "pattern": "agent2telegram run", "restart": r})
+            from . import bridges
+            bridges.register(cfg, c['obj'])
         added += 1
     if not added:
         print("Nothing selected.")
@@ -446,34 +468,33 @@ def new() -> int:
     if not shutil.which("tmux"):
         print("⚠️  tmux not found — agents run inside tmux. Install tmux first.")
         return 1
-    available = [t for t in AGENT_TYPES if shutil.which(t["bin"])]
-    if not available:
-        print("No agent CLI found on PATH (claude / codex / agy / aider / gemini).")
-        print("Install one (e.g. Claude Code) first, then re-run:  agentsmon new")
-        return 1
-
     print("=== Create a new agent ===\n")
     print("Step 1 — choose the agent type:\n")
-    for i, t in enumerate(available, 1):
-        print(f"  [{i}] {t['label']}")
-    sel = _ask("\nNumber", "1")
-    idx = int(sel) if (sel.isdigit() and 1 <= int(sel) <= len(available)) else 1
-    chosen = available[idx - 1]
+    chosen = choose_agent()
+    if chosen is None:
+        return 1
 
-    existing = {s["name"] for s in detect.tmux_sessions()}
+    cfg = config.load()
+    sessions = detect.tmux_sessions()
     name = ""
     while not name:
-        name = _ask("\nStep 2 — name for the agent")
+        try:
+            name = input('\nStep 2 – name for the agent: ').strip()
+        except EOFError:
+            return 1
         if not name:
             continue
         if any(c in name for c in ".:"):
             print("  Name can't contain '.' or ':' (tmux limitation) — pick another.")
             name = ""
-        elif name in existing:
-            print(f"  A tmux session '{name}' already exists — pick another name.")
+        elif name_taken(name, cfg, sessions):
+            print(f"  '{name}' is already configured or running — pick another name.")
             name = ""
 
     cwd = str(Path(_ask("Working directory", str(Path.home()))).expanduser())
+    print(f"Creating {chosen['label']}: {name} in {cwd}. Executable: {chosen['executable']}")
+    if not _yes('Continue?', default_yes=False):
+        return 0
 
     # Answer Claude's first-run prompts BEFORE launching, or the agent sits on the trust dialog
     # forever and never appears anywhere.
@@ -490,12 +511,15 @@ def new() -> int:
     if mk.returncode != 0:
         print(f"✗ couldn't create tmux session: {mk.stderr.strip()}")
         return 1
-    subprocess.run(["tmux", "send-keys", "-t", name, chosen["launch"], "Enter"], capture_output=True)
+    launch = shlex.quote(chosen['executable'])+' '+chosen['launch'].partition(' ')[2]
+    subprocess.run(["tmux", "send-keys", "-t", name, launch.strip(), "Enter"], capture_output=True)
 
     cfg = config.load()
     cfg.setdefault("agents", []).append({
         "name": name, "label": chosen["label"], "match": MATCH_KEYWORD[chosen["kind"]],
-        "restart": chosen["restart"], "cwd": cwd, "enabled": True})
+        "restart": '' if chosen['kind'] in detect.RESUME_TEMPLATES else launch.strip(),
+        'kind':chosen['kind'], 'identity_required':chosen['kind'] in detect.RESUME_TEMPLATES,
+        "cwd": cwd, "enabled": True})
     config.save(cfg)
     print(f"\n✓ Created '{name}' ({chosen['label']}), launched in tmux, and added to monitoring.")
     service.install()
@@ -504,11 +528,15 @@ def new() -> int:
     # a flat sleep sent the keys into a shell on a cold machine and nothing registered.
     if not wait_for_tui(name):
         print("  ! the agent TUI didn't come up in time — send it a first message yourself")
-    subprocess.run(["tmux", "send-keys", "-t", name, "Hello! Briefly introduce yourself.", "Enter"],
-                   capture_output=True)
-    import shlex
+    else:
+        if chosen['kind'] == 'claude-code':
+            from .dialogs import dismiss_optional_renderer
+            if dismiss_optional_renderer(name):
+                print('  Declined the optional fullscreen renderer experiment.')
+        subprocess.run(["tmux", "send-keys", "-t", name, "Hello! Briefly introduce yourself.", "Enter"],
+                       capture_output=True)
     print(f"\nAttach to interact (or finish login):  tmux attach -t {shlex.quote(name)}")
-    print("It now shows on the dashboard and is kept alive automatically.")
+    print('It now shows on the dashboard. Exact resume is pinned after session identity is verified.')
     return 0
 
 
@@ -531,12 +559,14 @@ def run() -> int:
         sel = _ask("Numbers to include (comma-separated), 'all', or 'none'", "all")
         chosen = _parse_selection(sel, len(candidates))
 
-    agents, daemons = [], []
+    agents, daemons, bridge_entries = [], [], []
     for i, c in enumerate(candidates, 1):
         if i not in chosen:
             continue
         if c["kind"] == "agent":
             agents.append(_agent_entry(c["obj"]))
+        elif c['kind'] == 'bridge':
+            bridge_entries.append(c['obj'])
         else:
             daemons.append(c["obj"])
     print(f"\n  → will monitor {len(agents)} agent(s) + {len(daemons)} daemon(s), with auto-restart.")
@@ -551,7 +581,8 @@ def run() -> int:
     cfg = config.load()
     cfg["dashboard"].update({"host": host, "port": int(port) if port.isdigit() else 8765})
     if expose:
-        print("⚠️  Exposed beyond localhost — a login is strongly recommended.")
+        print('WARNING: HTTP Basic Auth over plain HTTP exposes the password on the network.')
+        print('Prefer localhost with an SSH tunnel or encrypted Tailscale HTTPS access.')
     # HTTP auth — default yes when exposed.
     if _yes("Protect the dashboard with a login (HTTP auth)?", default_yes=expose):
         from . import dashboard
@@ -574,17 +605,20 @@ def run() -> int:
     cfg["services"] = [dict(SYSTEM_SERVICE)]
     for d in daemons:
         dmn, pin = _daemon_entries(d)
+        if dmn.get('manager'):
+            from . import managed
+            ok, notes = managed.activate(dmn['manager'])
+            for note in notes:
+                print(note)
+            if not ok:
+                return 1
         cfg["daemons"].append(dmn)
         cfg["pinned_daemons"].append(pin)
     # Auto-add a Telegram Bridge availability card if an Agent2Telegram bridge is running,
     # AND keep it alive (restart from its current command line, so it returns after a reboot).
-    tb = _telegram_bridge_service()
-    if tb:
-        cfg["services"].append(tb)
-        restart = _bridge_restart_cmd()
-        if restart:
-            cfg["daemons"].append({"name": "Telegram Bridge", "pattern": "agent2telegram run",
-                                   "restart": restart})
+    from . import bridges
+    for bridge in bridge_entries:
+        bridges.register(cfg, bridge)
     path = config.save(cfg)
     print(f"\n✓ Saved config to {path}")
     print(f"  Supervising {len(agents)} agent(s), watching {len(daemons)} daemon(s).")

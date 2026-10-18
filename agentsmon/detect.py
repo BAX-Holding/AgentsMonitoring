@@ -18,6 +18,7 @@ import shutil
 import sqlite3
 from contextlib import closing
 import subprocess
+import sys
 import time
 import urllib.request
 from pathlib import Path
@@ -103,6 +104,12 @@ def pinned_agents(pinned: list[dict]) -> list[dict]:
         r = _run(["pgrep", "-f", pat]) if pat else None
         pids = [int(x) for x in r.stdout.split()] if (r and r.returncode == 0) else []
         ages = [a for a in (_proc_age(p) for p in pids) if a is not None]
+        if d.get('manager'):
+            from . import managed
+            if d['manager'].get('type') == 'systemd':
+                pid = managed.properties(d['manager']['unit']).get('MainPID')
+                age = _proc_age(int(pid)) if pid and pid.isdigit() and int(pid)>0 else None
+                ages = [age] if age is not None else []
         age = max(ages) if ages else None    # oldest matching process = how long the service has been up
         health_url = d.get("health_url")
         lat = None
@@ -111,7 +118,11 @@ def pinned_agents(pinned: list[dict]) -> list[dict]:
             alive = bool(ok)                              # health endpoint is authoritative
             lat = round(secs * 1000) if secs is not None else None
         else:
-            alive = bool(pids)                            # no health URL → fall back to process match
+            if d.get('manager'):
+                from . import managed
+                alive = managed.active(d['manager']) is True
+            else:
+                alive = bool(pids)
         # Concrete model detected LIVE (so it stays current without rebuilding config); an
         # explicit config tag/vendor still wins if set.
         model = daemon_model(d.get("name", ""))
@@ -493,7 +504,8 @@ def antigravity_sid(mapped: str | None, pids: list) -> str | None:
     The workspace map wins where it exists; the presence lock covers a session young enough
     that the map has not been written yet.
     """
-    return mapped or _antigravity_sid_from_presence(pids)
+    # The cwd cache may describe a different live process in the same directory.
+    return _antigravity_sid_from_presence(pids)
 
 
 def _antigravity_sid_from_presence(pids: list) -> str | None:
@@ -503,12 +515,13 @@ def _antigravity_sid_from_presence(pids: list) -> str | None:
     this answers immediately — unlike cache/last_conversations.json, which is only written
     once the conversation has been persisted and left a brand-new agent with no id at all.
     """
+    found = set()
     for f in open_files(pids):
         if "/presence/" in f and f.endswith(".lock"):
             m = UUID_RE.search(os.path.basename(f))
             if m:
-                return m.group(0)
-    return None
+                found.add(m.group(0))
+    return next(iter(found)) if len(found) == 1 else None
 
 
 def _antigravity_info_for_cwd(cwd: str) -> tuple[str | None, str | None]:
@@ -542,8 +555,8 @@ def _classify(cmds: list[str], extra_matches: list[tuple]) -> tuple[str, str, st
     for cmd in cmds:
         for kind, label, pat in KNOWN_AGENTS:
             if pat.search(cmd):
-                sid = UUID_RE.search(cmd)
-                return kind, label, (sid.group(0) if sid else None)
+                from .identity import explicit_id
+                return kind, label, explicit_id(cmd, UUID_RE)
         for kind, label, pat in extra_matches:
             if pat.search(cmd):
                 sid = UUID_RE.search(cmd)
@@ -687,54 +700,56 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
     procs, children = _proc_table()
     codex_model = _codex_model()
     agents = []
-    # Session ids already claimed in this pass, so two agents sharing one working directory
-    # cannot both be handed the newest transcript in it.
-    prirazena: set = set()
+    from .identity import resolve
+    rows = []
     for s in tmux_sessions():
         pids = _pane_pids(s["name"])
         tree = _subtree(pids, children)
-        cmds = [procs[p] for p in tree if p in procs]
+        # Parents precede their workers; set iteration order must never decide
+        # which conversation belongs to the visible TUI.
+        ordered, pending, seen = [], list(pids), set()
+        while pending:
+            pid = pending.pop(0)
+            if pid in seen:
+                continue
+            seen.add(pid)
+            ordered.append(pid)
+            pending.extend(children.get(pid, []))
+        cmds = [procs[p] for p in ordered if p in procs]
         # Prefer non-shell commands when classifying.
         ranked = sorted(cmds, key=lambda c: c.split()[0].rsplit("/", 1)[-1] in SHELLS)
         kind, label, sid = _classify(ranked, extra_matches)
-        # For Codex: resolve the session id + the concrete model from its rollout (the rollout
-        # records the model even when ~/.codex/config.toml doesn't); show the model as the label.
+        matching = [p for p in tree if any(k == kind and pat.search(procs.get(p,''))
+                    for k, _, pat in KNOWN_AGENTS)]
+        ages = [_proc_age(p) for p in matching]
+        started = now-max(ages) if ages and all(a is not None for a in ages) else None
+        cwd = _session_cwd(s['name'])
+        rows.append({'name':s['name'], 'kind':kind, 'label':label, 'session_id':sid,
+                     'cwd':os.path.realpath(cwd) if cwd else '',
+                     'started':started, 'pids':sorted(tree), 'commands':ranked,
+                     'age':int(now-s['created']) if s['created'] else None})
+    resolve(rows, sys.modules[__name__], now)
+    for row in rows:
+        kind, label, sid = row['kind'], row['label'], row['session_id']
+        ranked = row['commands']
         if kind == "codex":
-            cwd = _session_cwd(s["name"])
-            rsid, rmodel = _codex_info_for_cwd(cwd) if cwd else (None, None)
-            if sid is None:
-                sid = rsid
-            model = rmodel or codex_model
+            model = (_rollout_model(row['transcript']) if row['transcript'] else None) or _model_from_argv(ranked) or codex_model
             if model:
                 label = model
-        # Claude Code / Antigravity: a fresh launch has no id on argv — resolve the session id AND
-        # the concrete model by cwd, so both show up (just like Codex does).
         if kind == "claude-code":
-            cwd = _session_cwd(s["name"])
-            explicit_sid = sid
-            csid, cmodel = _claude_info_for_cwd(cwd, prirazena) if cwd else (None, None)
-            if explicit_sid:
-                cmodel = _claude_model_for_session(explicit_sid)
-            if sid is None:
-                sid = csid
-            # Exact session transcript preserves /model switches. A cwd-only match
-            # cannot override an explicit model on this process's command line.
-            label = label_for_claude(cmodel, ranked, label, exact_session=bool(explicit_sid))
+            cmodel = _claude_model_for_session(sid) if sid else None
+            label = label_for_claude(cmodel, ranked, label, exact_session=bool(sid))
         elif kind == "antigravity":
-            cwd = _session_cwd(s["name"])
-            asid, amodel = _antigravity_info_for_cwd(cwd) if cwd else (None, None)
-            if sid is None:
-                sid = antigravity_sid(asid, tree)
+            _, amodel = _antigravity_info_for_cwd(row['cwd'])
             label = antigravity_label(amodel, sid, ranked, label)
-        age = int(now - s["created"]) if s["created"] else None
-        resume = RESUME_TEMPLATES.get(kind, "").format(id=sid) if (sid and kind in RESUME_TEMPLATES) else None
-        if sid:
-            prirazena.add(sid)
+        resume = RESUME_TEMPLATES[kind].format(id=sid) if (sid and kind in RESUME_TEMPLATES
+                  and not row.get('identity_conflict')) else None
         agents.append({
-            "name": s["name"], "kind": kind, "label": label, "session_id": sid,
+            "name": row['name'], "kind": kind, "label": label, "session_id": sid,
             "vendor": vendor_for_agent(kind, label),
-            "alive": kind != "shell", "age": age,
-            "resume_cmd": resume, "pids": sorted(tree),
+            "alive": kind != "shell", "age": row['age'],
+            "resume_cmd": resume, "pids": row['pids'],
+            "identity_conflict": row.get('identity_conflict', False),
         })
     return agents
 
@@ -843,9 +858,16 @@ def daemon_status(daemons: list[dict]) -> list[dict]:
     there is no ``health_url``."""
     out = []
     for d in daemons:
+        from . import managed
         pat = d.get("pattern", "")
-        proc_up = bool(pat) and _run(["pgrep", "-f", pat]) is not None and \
-            _run(["pgrep", "-f", pat]).returncode == 0
+        if d.get('bridge_config'):
+            from . import bridges
+            proc_up = bool(bridges.running_pids(d))
+        elif d.get('manager'):
+            proc_up = managed.active(d['manager']) is True
+        else:
+            process = _run(['pgrep','-u',str(os.getuid()),'-f','--',pat]) if pat else None
+            proc_up = bool(process and process.returncode == 0)
         entry = {"name": d.get("name", pat), "pattern": pat, "process_up": proc_up}
         url = d.get("health_url")
         if url:

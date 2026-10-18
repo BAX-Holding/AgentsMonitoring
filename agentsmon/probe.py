@@ -149,6 +149,16 @@ def _system_health(cfg: dict) -> tuple[bool, float | None, str]:
     checks += [s for s in cfg.get("services", []) if s.get("kind") != "system"]
     for c in checks:
         name = c.get("name") or c.get("process") or c.get("pattern") or "?"
+        if c.get('bridge_config'):
+            from . import bridges
+            if not bridges.running_pids(c):
+                down.append(name)
+            continue
+        if c.get('manager'):
+            from . import managed
+            if managed.active(c['manager']) is not True:
+                down.append(name)
+            continue
         url = c.get("health_url")
         if c.get("command"):
             # A module is judged by its latest recorded sample — running every module again
@@ -243,6 +253,11 @@ def probe_once(cfg: dict) -> None:
         if s.get("kind") == "system":
             ok, lat, detail = _system_health(cfg)
             db.record(name, ok, lat, detail)
+            continue
+        if s.get('bridge_config'):
+            from . import bridges
+            up = bool(bridges.running_pids(s))
+            db.record(name, up, None, 'bridge running' if up else 'bridge process missing')
             continue
         proc = _proc_up(s.get("process", ""))
         ok, lat, detail = proc, None, f"proc={'up' if proc else 'down'}"

@@ -139,6 +139,17 @@ fi
 # pip is OPTIONAL — the package is pure standard library. Try pip (so hooks/other tools can
 # import it), but EITHER WAY drop our own launcher into a dir on PATH so `agentsmon` is a real
 # command right after install — no PYTHONPATH to remember, no new shell when a PATH dir is writable.
+# Re-running the installer can pull same-sized files within one timestamp second.
+# Refresh cache before importing the package even when setup/pip are disabled.
+"$PY" - "$SRC" <<'PYEOF' || err "Could not refresh package bytecode; installation preserved."
+import compileall
+import pathlib
+import py_compile
+import sys
+package = pathlib.Path(sys.argv[1]) / "agentsmon"
+sys.exit(0 if compileall.compile_dir(str(package), quiet=1, force=True,
+    invalidation_mode=py_compile.PycInvalidationMode.CHECKED_HASH) else 1)
+PYEOF
 if [ "$NO_PIP" -eq 0 ] && { "$PY" -m pip --version >/dev/null 2>&1 || "$PY" -m ensurepip --upgrade >/dev/null 2>&1; }; then
   "$PY" -m pip install --user --upgrade "$SRC" >/dev/null 2>&1 \
     || "$PY" -m pip install --user --break-system-packages --upgrade "$SRC" >/dev/null 2>&1 || true

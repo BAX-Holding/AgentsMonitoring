@@ -29,4 +29,9 @@ def run() -> int:
     for a in cfg.get("agents", []):
         if a.get("enabled", True) and not a.get("restart"):
             print(f"  ⚠️  '{a['name']}' has no restart command — it can't be revived if it dies.")
+    from . import managed
+    for daemon in cfg.get('daemons', []):
+        for warning in managed.warnings(daemon):
+            print('  Warning: '+warning)
+            ok = False
     return 0 if ok else 1

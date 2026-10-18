@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.2 (2026-10-18)
+
+- Bind conversation IDs to explicit resume arguments, process-held files or
+  unambiguous session creation times. Shared working directories no longer select
+  the newest conversation; uncertain identities block automatic resume.
+- Pin newly created sessions for exact resume. Keep stable CLI menu numbers,
+  discover common user-bin installations, confirm the selected agent and reject
+  duplicate configured names, including stopped agents.
+- Respect systemd user units and launchd jobs when stopping/restarting daemons;
+  verify outcomes. Supply missing user-bus environment under `su`, enable selected
+  user units and attempt own-user lingering with explicit administrator guidance.
+- Monitor each Agent2Telegram config independently. Add idempotent noninteractive
+  bridge registration for optional integrations; preserve interpreter, config,
+  state and source path without copying credentials.
+- Warn that HTTP Basic Auth needs encrypted transport outside localhost.
+- Refresh checked-hash bytecode on installer re-runs before any package import,
+  including `--no-setup --no-pip`, so same-second upgrades report the new version.
+
 ## 0.3.1 (2026-10-18)
 
 - Bootstrap the configured tmux server from the cron launcher's shell before

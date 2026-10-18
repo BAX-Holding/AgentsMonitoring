@@ -74,15 +74,17 @@ class ProcessStopScope(unittest.TestCase):
         calls=[]
         def run(argv,**kwargs):
             calls.append(argv)
-            return subprocess.CompletedProcess(argv,0,b'',b'')
+            return subprocess.CompletedProcess(argv,1 if argv[0]=='pgrep' else 0,'','')
         cfg={'agents':[],'daemons':[{'name':'Example','pattern':'-example-worker'}]}
         with patch.object(config,'load',return_value=cfg), \
+             patch('agentsmon.managed.discover',return_value=None), \
              patch.object(dashboard,'_set_enabled',side_effect=lambda *args:calls.append(args)), \
              patch.object(dashboard.subprocess,'run',side_effect=run):
             ok,message=dashboard._agent_action('Example','stop')
         self.assertTrue(ok,message)
         self.assertEqual(calls,[('Example',False),
-            ['pkill','-u',str(os.getuid()),'-f','--','-example-worker']])
+            ['pkill','-u',str(os.getuid()),'-f','--','-example-worker'],
+            ['pgrep','-u',str(os.getuid()),'-f','--','-example-worker']])
 
     def test_cancelled_uninstall_does_not_stop_or_remove_anything(self):
         with patch('builtins.input',return_value='n'), \

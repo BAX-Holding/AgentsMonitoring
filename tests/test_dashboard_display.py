@@ -59,11 +59,12 @@ class SessionIdFallback(unittest.TestCase):
         finally:
             detect.discover_agents = orig
 
-    def test_id_taken_from_resume_when_process_lost_it(self):
+    def test_stale_config_does_not_supply_identity_to_an_unresolved_process(self):
         agents = self._state([{"name": "Alice - Master", "kind": "codex", "label": "GPT-5.6-SOL",
                                "session_id": None, "vendor": "openai", "alive": True,
                                "age": 60, "resume_cmd": None, "pids": [1]}])
-        self.assertEqual(agents["Alice - Master"]["session_id"], SID)
+        self.assertIsNone(agents["Alice - Master"]["session_id"])
+        self.assertIsNone(agents["Alice - Master"]["resume_cmd"])
 
     def test_detected_id_is_not_overwritten(self):
         other = "ffffffff-1111-2222-3333-444444444444"
@@ -299,12 +300,12 @@ class AntigravityDecisionAndParsing(unittest.TestCase):
 
     LOCK = "/h/.gemini/antigravity-cli/presence/3d06ea18-306c-47f4-a173-3ed9a452dc05.lock"
 
-    def test_map_wins_when_present(self):
+    def test_process_presence_wins_over_shared_cwd_map(self):
         orig = detect.open_files
         detect.open_files = lambda pids: [self.LOCK]
         try:
             self.assertEqual(detect.antigravity_sid("aaaaaaaa-1111-2222-3333-444444444444", [1]),
-                             "aaaaaaaa-1111-2222-3333-444444444444")
+                             "3d06ea18-306c-47f4-a173-3ed9a452dc05")
         finally:
             detect.open_files = orig
 

@@ -1,0 +1,41 @@
+from contextlib import redirect_stdout
+import io
+import os
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from agentsmon import wizard
+
+
+class NewSelection(unittest.TestCase):
+    def test_missing_claude_keeps_number_one_and_invalid_inputs_reprompt(self):
+        output = io.StringIO()
+        with patch.object(wizard.shutil, 'which', side_effect=lambda n:'/bin/codex' if n=='codex' else None), \
+             patch.object(os, 'access', return_value=False), \
+             patch('builtins.input', side_effect=['', '99', '1', '2']), redirect_stdout(output):
+            chosen = wizard.choose_agent()
+        self.assertEqual(chosen['kind'], 'codex')
+        self.assertIn('[1] Claude Code (not installed / not on PATH)', output.getvalue())
+        self.assertIn('[2] Codex', output.getvalue())
+        self.assertIn('new terminal', output.getvalue())
+
+    def test_eof_cancels_without_selecting_an_agent(self):
+        with patch('builtins.input', side_effect=EOFError), redirect_stdout(io.StringIO()):
+            self.assertIsNone(wizard.choose_agent())
+
+    def test_common_bin_paths_work_without_path(self):
+        with tempfile.TemporaryDirectory() as d, patch.object(Path,'home',return_value=Path(d)), \
+             patch.object(wizard.shutil,'which',return_value=None):
+            path = Path(d)/'.local/bin/claude'
+            path.parent.mkdir(parents=True)
+            path.write_text('#!/bin/sh\nexit 0\n')
+            path.chmod(0o755)
+            self.assertEqual(wizard.find_cli('claude'), str(path))
+
+    def test_configured_disabled_name_is_already_taken(self):
+        cfg = {'agents':[{'name':'Writer','enabled':False}], 'daemons':[{'name':'Worker'}]}
+        self.assertTrue(wizard.name_taken('Writer', cfg, []))
+        self.assertTrue(wizard.name_taken('Worker', cfg, []))
+        self.assertFalse(wizard.name_taken('Other', cfg, []))
