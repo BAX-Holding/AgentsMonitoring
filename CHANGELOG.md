@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.3 (2026-10-18)
+
+- Restore conversation identity and the recorded model for a single Claude Code
+  agent continuing an older transcript. Single Codex and Antigravity agents use
+  the same directory fallback when stronger process evidence is unavailable.
+- Keep exact resume pins across restarts. Multiple agents of the same kind in one
+  directory still require unambiguous evidence; already claimed identities and
+  conflicting directory mappings are never borrowed.
+- Respect `CODEX_HOME` when resolving a single agent's most recent rollout.
+
 ## 0.3.2 (2026-10-18)
 
 - Bind conversation IDs to explicit resume arguments, process-held files or

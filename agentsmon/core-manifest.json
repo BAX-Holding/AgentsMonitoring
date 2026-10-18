@@ -1,16 +1,16 @@
 {
-  "content_id": "7ed11205749d603431e22cb230abb3a2803c8b65204498672cfd919922dec7cd",
+  "content_id": "526a5142a895839c14e1927337c8c74240c2868b705b0b7409db476e9f3c1454",
   "files": {
-    "__init__.py": "9d6817bff387bb9598b13ffeb26aba934d81ce3a052fff61d30c0697d1e190a4",
+    "__init__.py": "5ab5ae50f73560ef26d098db9f67427f61cdcbcb82995ef381256a1d560ee3b5",
     "__main__.py": "86128fddb3e1006ee0d06ed246db64068825a0502842bfae2612d8d464d70f6f",
     "bridges.py": "0bc78bbf17da5d937e93da160e6e19e8e28fa8ce376221d3f65c9bcca6a89706",
     "config.py": "b82b76175ddade997edec84b44b8fe14e50f8f503c5f173447419469fbd421a6",
     "dashboard.py": "9e71201a3910dd2eb02babfba1b507c11bdf16ec4c3b1ff6e8f1e30f0ec119f8",
     "db.py": "470bafc161d24ac1bea302af0873ebf2e596a8ce77796cb29e79189bb2d1c5cf",
-    "detect.py": "9152202e8aa31af1ac5e3990f4ded35aececcd7a7433b112dc2cd9f613b2f5d0",
+    "detect.py": "5b37809bd98452d6acc4e3093fc8c6224289d9641aadfff4fa6603604e6ba10a",
     "dialogs.py": "690cf9a5fb439809329a8054d74de32cca192b67d6e931926762f345812b2b66",
     "doctor.py": "b91ff6caabe4fe9a967e46ff0eed1ad0162b99c94d402bd5dcefa82745bb2818",
-    "identity.py": "5a99b846ae4d89dc701160da3108450d2f5d16f284c5e829a77e07d6b5cf5130",
+    "identity.py": "933d4f6035a33f5c415327db2c3580abdd59049ce529dad24efef5dac87914f5",
     "integrity.py": "d844957010427fce6141365dc00e3dacaa45182e448c7177ae9ed4bc5d7a341b",
     "keepalive.py": "f06616f4b43ebf272c707ad319db034aa89ccefdd8db17b2e62f23aa7a22e21d",
     "managed.py": "f5e07722e9083fbcd2ea2f2fc2cc5aa6b6d556f8ed8c596e757a308df092eef3",
@@ -25,6 +25,6 @@
     "usage_plugin.py": "d30e2fd2ff35c486cabed7dc7913028fffddee4ab9a8cb9c9c3ecee83ca5c72a",
     "wizard.py": "6937fa3dca80f6376e752ae07cd49232e5ef0b1c562e04bc295baa5f0bb64eba"
   },
-  "release": "v0.3.2-candidate",
-  "version": "0.3.2"
+  "release": "v0.3.3-candidate",
+  "version": "0.3.3"
 }

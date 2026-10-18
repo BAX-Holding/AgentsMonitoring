@@ -1,4 +1,4 @@
-"""Conservative process-to-conversation ownership (no newest-by-directory guesses)."""
+"""Process-to-conversation ownership, with a single-agent directory fallback."""
 from datetime import datetime
 import json
 import os
@@ -50,6 +50,8 @@ def resolve(rows, detect, now):
     Proof order: explicit resume argv, process-held transcript/presence lock, unique
     session metadata within the first minute of a fresh process. Closely overlapping
     process starts are ambiguous (ps start-time precision is only one second).
+    Finally, a sole agent of its kind in a directory may use that directory's last
+    conversation, including a continued transcript older than the running process.
     """
     records = {}
     for kind, root, pattern in (
@@ -100,12 +102,34 @@ def resolve(rows, detect, now):
     for i, ids in candidates.items():
         if len(ids) == 1 and sum(ids[0] in other for other in candidates.values()) == 1:
             rows[i]['session_id'] = ids[0]
+    _single_directory_fallback(rows, detect)
     for row in rows:
         sid = row['session_id']
         if sid and sum(r['kind']==row['kind'] and r['session_id']==sid for r in rows) > 1:
             row['identity_conflict'] = True
         rec = records.get((row['kind'], sid))
         row['transcript'] = rec['path'] if rec else None
+
+
+def _single_directory_fallback(rows, detect):
+    """Never assign an unclaimed older transcript when the latest is already taken."""
+    lookups = {'claude-code':detect._claude_info_for_cwd,
+               'codex':detect._codex_info_for_cwd,
+               'antigravity':detect._antigravity_info_for_cwd}
+    claimed = {(r['kind'], r['session_id']) for r in rows if r['session_id']}
+    candidates = {}
+    for i, row in enumerate(rows):
+        if row['session_id'] or not row['cwd'] or row['kind'] not in lookups:
+            continue
+        if sum(r['kind']==row['kind'] and r['cwd']==row['cwd'] for r in rows) != 1:
+            continue
+        sid, model = lookups[row['kind']](row['cwd'])
+        if isinstance(sid, str) and detect.UUID_RE.fullmatch(sid) and (row['kind'], sid) not in claimed:
+            candidates[i] = (row['kind'], sid, model)
+    for i, (kind, sid, model) in candidates.items():
+        if sum((k, s)==(kind, sid) for k, s, _ in candidates.values()) == 1:
+            rows[i]['session_id'] = sid
+            rows[i]['resolved_model'] = model
 
 
 def requires_pin(agent):

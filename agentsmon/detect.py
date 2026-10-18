@@ -219,7 +219,7 @@ def _rollout_model(path: str) -> str | None:
 
 def _codex_info_for_cwd(cwd: str) -> tuple[str | None, str | None]:
     """Find the Codex session whose recorded cwd matches → (session UUID, concrete model)."""
-    base = Path.home() / ".codex" / "sessions"
+    base = Path(os.environ.get('CODEX_HOME', Path.home()/'.codex')) / 'sessions'
     if not cwd or not base.is_dir():
         return None, None
     target = os.path.realpath(cwd)
@@ -733,7 +733,8 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
         kind, label, sid = row['kind'], row['label'], row['session_id']
         ranked = row['commands']
         if kind == "codex":
-            model = (_rollout_model(row['transcript']) if row['transcript'] else None) or _model_from_argv(ranked) or codex_model
+            model = ((_rollout_model(row['transcript']) if row['transcript'] else None)
+                     or row.get('resolved_model') or _model_from_argv(ranked) or codex_model)
             if model:
                 label = model
         if kind == "claude-code":

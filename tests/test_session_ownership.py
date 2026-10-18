@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from agentsmon import detect, wizard
+from agentsmon import detect, identity, wizard
 
 
 class SessionOwnership(unittest.TestCase):
@@ -99,3 +99,107 @@ class SessionOwnership(unittest.TestCase):
              patch.object(detect,'tmux_sessions',return_value=[{'name':'First','created':self.now-500}]):
             row = detect.discover_agents()[0]
         self.assertEqual(row['session_id'], self.ids[0])
+
+    def single(self):
+        return patch.object(detect, 'tmux_sessions', return_value=[
+            {'name':'First', 'created':self.now-500}])
+
+    def test_single_continue_claude_uses_old_transcript_model_and_pins_resume(self):
+        self.commands[101] = 'claude --continue'
+        self.rollout(self.ids[1], 3000, 'claude')
+        path = self.rollout(self.ids[0], 1000, 'claude')
+        with path.open('a') as stream:
+            stream.write(json.dumps({'type':'assistant','message':{'model':'claude-opus-5-5'}})+'\n')
+        os.utime(path, (self.now-900, self.now-900))
+        with self.single():
+            row = detect.discover_agents()[0]
+        self.assertEqual(row['session_id'], self.ids[0])
+        self.assertEqual(row['label'], 'Opus 5.5')
+        agent = {'name':'First','kind':'claude-code','cwd':'/work/shared',
+                 'restart':'claude --continue'}
+        with patch.object(identity, 'requires_pin', return_value=True), \
+             patch('agentsmon.config.state_dir', return_value=self.home/'state'):
+            pins = identity.pin_sessions({'agents':[agent]}, [row])
+        resumed = identity.safe_restart(agent, [], pins)
+        self.assertIn('--resume '+self.ids[0], resumed['restart'])
+        self.assertNotIn('--continue', resumed['restart'])
+        self.assertNotIn('restart_warning', resumed)
+
+    def test_single_codex_uses_latest_old_rollout_and_its_model(self):
+        self.commands[101] = 'codex resume --last'
+        path = self.rollout(self.ids[0], 1000)
+        with path.open('a') as stream:
+            stream.write(json.dumps({'type':'turn_context','payload':{'model':'gpt-5.5'}})+'\n')
+        os.utime(path, (self.now-900, self.now-900))
+        with self.single():
+            row = detect.discover_agents()[0]
+        self.assertEqual(row['session_id'], self.ids[0])
+        self.assertEqual(row['label'], 'GPT-5.5')
+        self.assertIn(self.ids[0], row['resume_cmd'])
+
+    def agy_map(self):
+        folder = self.home/'.gemini/antigravity-cli/cache'
+        folder.mkdir(parents=True)
+        (folder/'last_conversations.json').write_text(json.dumps({'/work/shared':self.ids[0]}))
+
+    def test_single_antigravity_uses_workspace_map(self):
+        self.commands[101] = 'agy'
+        self.agy_map()
+        with self.single():
+            row = detect.discover_agents()[0]
+        self.assertEqual(row['session_id'], self.ids[0])
+        self.assertIn(self.ids[0], row['resume_cmd'])
+
+    def test_two_claude_continue_agents_do_not_guess_old_transcripts(self):
+        self.commands.update({101:'claude --continue',201:'claude --continue'})
+        self.rollout(self.ids[0], 1000, 'claude')
+        self.rollout(self.ids[1], 2000, 'claude')
+        self.assertEqual([r['session_id'] for r in detect.discover_agents()], [None, None])
+
+    def test_two_antigravity_agents_do_not_share_workspace_map(self):
+        self.commands.update({101:'agy',201:'agy'})
+        self.agy_map()
+        self.assertEqual([r['session_id'] for r in detect.discover_agents()], [None, None])
+
+    def test_other_kind_in_same_directory_does_not_block_singleton(self):
+        self.commands.update({101:'claude --continue',201:'codex'})
+        self.rollout(self.ids[0], 1000, 'claude')
+        self.rollout(self.ids[1], 2000)
+        self.assertEqual([r['session_id'] for r in detect.discover_agents()], self.ids)
+
+    def test_latest_identity_claimed_elsewhere_is_not_replaced_by_older_guess(self):
+        self.commands.update({101:'claude --continue',201:'claude --resume '+self.ids[0]})
+        self.rollout(self.ids[0], 1000, 'claude')
+        self.rollout(self.ids[1], 2000, 'claude')
+        with patch.object(detect, '_session_cwd', side_effect=lambda name:
+                          '/work/shared' if name=='First' else '/work/other'):
+            rows = detect.discover_agents()
+        self.assertIsNone(rows[0]['session_id'])
+        self.assertEqual(rows[1]['session_id'], self.ids[0])
+
+    def test_explicit_identity_wins_over_latest_singleton_transcript(self):
+        self.commands[101] = 'claude --resume '+self.ids[0]
+        self.rollout(self.ids[1], 1000, 'claude')
+        with self.single():
+            self.assertEqual(detect.discover_agents()[0]['session_id'], self.ids[0])
+
+    def test_single_codex_respects_custom_home(self):
+        source = self.rollout(self.ids[0], 1000)
+        target = self.home/'alternate/sessions'/source.name
+        target.parent.mkdir(parents=True)
+        source.replace(target)
+        with self.single(), patch.dict(os.environ, {'CODEX_HOME':str(target.parent.parent)}):
+            self.assertEqual(detect.discover_agents()[0]['session_id'], self.ids[0])
+
+    def test_single_claude_startup_record_without_cwd_or_timestamp(self):
+        self.commands[101] = 'claude --continue'
+        path = self.rollout(self.ids[0], 1000, 'claude')
+        path.write_text(json.dumps({'type':'file-history-snapshot','sessionId':self.ids[0]})+'\n')
+        with self.single():
+            self.assertEqual(detect.discover_agents()[0]['session_id'], self.ids[0])
+
+    def test_singleton_workspace_maps_cannot_claim_same_id_twice(self):
+        self.commands.update({101:'agy',201:'agy'})
+        with patch.object(detect, '_session_cwd', side_effect=lambda name:'/work/'+name), \
+             patch.object(detect, '_antigravity_info_for_cwd', return_value=(self.ids[0],None)):
+            self.assertEqual([r['session_id'] for r in detect.discover_agents()], [None, None])

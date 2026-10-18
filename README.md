@@ -33,12 +33,15 @@ tmux sessions  ⇄  Agents Monitoring  ⇄  status page + keepalive
 
 ## Quick start
 
-### Safe conversation ownership (0.3.2)
+### Safe conversation ownership (0.3.3)
 
 Agents sharing a directory must have independent conversation IDs. Detection uses
 explicit resume arguments, a transcript/presence file held by the process, or an
-unambiguous creation timestamp during a fresh process's first minute. It never
-chooses the newest conversation solely because the working directory matches.
+unambiguous creation timestamp during a fresh process's first minute. When exactly
+one agent of a kind runs in a directory, its latest transcript/workspace mapping
+is also accepted. This preserves older conversations opened with `--continue`.
+With multiple agents of the same kind in that directory, this fallback is disabled;
+an identity claimed by another agent is never borrowed.
 An uncertain ID remains blank. After a crash, an agent without proven ownership
 starts a **fresh conversation**, removing resume/continue selectors from its
 configured CLI command. A persistent amber dashboard notice and keepalive log
