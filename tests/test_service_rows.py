@@ -12,7 +12,7 @@ import tempfile
 import unittest
 
 os.environ.setdefault("AGENTSMON_STATE", tempfile.mkdtemp(prefix="agentsmon-test-state-"))
-from agentsmon import config, dashboard, db, probe   # noqa: E402
+from agentsmon import dashboard, db, probe   # noqa: E402
 
 
 ROWS_CMD = ("echo '" + json.dumps({"up": False, "latency_ms": 7, "detail": "prod up · staging DOWN", "rows": [
@@ -71,8 +71,8 @@ class RowsRecordedAndShown(unittest.TestCase):
 
     def test_page_has_the_rows_table_and_renderer(self):
         self.assertIn('class="svc-rows-wrap', dashboard.PAGE)
-        self.assertIn("function renderRows(root, rows)", dashboard.PAGE)
-        self.assertIn("renderRows(root, s.rows||[])", dashboard.PAGE)
+        self.assertIn("function renderRows(root, rows, details=false)", dashboard.PAGE)
+        self.assertIn("renderRows(root, s.rows||[], s.row_details===true)", dashboard.PAGE)
         self.assertEqual(dashboard.PAGE.count('style="table-layout:fixed;min-width:680px"'), 3, "agents, sandbox, rows")
 
 

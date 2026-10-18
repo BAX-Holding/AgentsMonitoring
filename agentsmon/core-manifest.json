@@ -1,26 +1,26 @@
 {
-  "content_id": "fadb2f4a1c01344fce978bd868ff9930237fe8cb17ded3479007efca7b13b367",
+  "content_id": "3afa71c2f6d1153bd82c3ca18946b55cc58a98e7613eeb53aabc34802eae3c73",
   "files": {
-    "__init__.py": "b097ed64761ca3655907bd8cfcfcb90b77e847dc648c95f41193caed082ce6d3",
+    "__init__.py": "4785cccb32bf05716629406cbe2dc1783c9d794b229669f24ad4ee67c621bbb9",
     "__main__.py": "57ed98fd45acf4852c17cdf37c205a433dc612f09bb13cdb5cadc5698437734e",
     "config.py": "b9deca85e19f7484cd41e2b378482025fd8c2666075e4cb69cfd0ff40171d332",
-    "dashboard.py": "967b4bde84a6b6f53e1ab27091cb05f08a4f3cb258ab475fd3e6d7475ad1236e",
+    "dashboard.py": "5a54b1f6344c33f2c63d899c0716589096494f3eb3174b0b60878dfbeafd757d",
     "db.py": "470bafc161d24ac1bea302af0873ebf2e596a8ce77796cb29e79189bb2d1c5cf",
     "detect.py": "0744ee0014c5efee1ec96af90f2d8dd12fe18cc7e577445a81a3194590c7d118",
     "doctor.py": "031123e32eb89795144efce7cf17d10b286464eb470631bb1d6db74f72947730",
     "integrity.py": "d844957010427fce6141365dc00e3dacaa45182e448c7177ae9ed4bc5d7a341b",
     "keepalive.py": "f51354e43dd82575c1af2100e1bc3ec9b1d139ed12517fa2b88021c322b981c5",
     "plugin_worker.py": "407c3054cfba3429b5f1c7cf28413d12a6b6a12eb0f49de9d23135c2daf4dedb",
-    "plugins.py": "c4081abc8009634224d7dfdc30f9df9cd3735c3bda48a8be9cc0ade17a18f517",
+    "plugins.py": "68815d1560a82716caa1b651f5c6d2066ebc6e2a593bedc58d0dc2c80f3f2222",
     "probe.py": "89c803810394351a6dee1e5f85ed4784856cd98dc6f1782405b3ec4f8ab479f8",
-    "service.py": "4b22d8c9af681754c0b67800de5ef987cf6107dbc5a1fc75141b8ccb515ef662",
+    "service.py": "9e7f4c0c87e2be6df9f8588ff926c4a2ad8f8c13c3f1da7fcc90ed5077b4cc29",
     "static/tailwind.js": "176e894661aa9cdc9a5cba6c720044cbbf7b8bd80d1c9a142a7c24b1b6c50d15",
     "status.py": "93ec57cb9be2d6234cbaaf421844bb00a80a8d2883a8633225ab27a7410d5d85",
     "uninstaller.py": "c149b57897c91322abcfbf3a41e47b1fd37127212f0f6f9de5f9813af14a5b26",
-    "updater.py": "485b3d71dbf234c81763ba902a0ad25986f1d0742370a7b60bd2c0fd88322890",
+    "updater.py": "b5da190e63ca8045e07f4179db0d341f1551f161020747d2c9fee4d32be00718",
     "usage_plugin.py": "d30e2fd2ff35c486cabed7dc7913028fffddee4ab9a8cb9c9c3ecee83ca5c72a",
-    "wizard.py": "c8c4881428626be2546fe88e0fe73d3ed96b9eb6112132a6a63caf4da55ffa9b"
+    "wizard.py": "1ddc380aefffd0dfb9c28ab6c56707a99f62c8e4bf8a8d29c28c15cdac5aa798"
   },
-  "release": "v0.3.0",
-  "version": "0.3.0"
+  "release": "v0.3.1-candidate",
+  "version": "0.3.1"
 }

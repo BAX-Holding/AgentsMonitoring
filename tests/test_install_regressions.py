@@ -18,6 +18,8 @@ class InstallationRegressions(unittest.TestCase):
     def test_launcher_ignores_foreign_dashboard_but_recognises_own(self):
         with tempfile.TemporaryDirectory() as tmp:
             home=Path(tmp); bindir=home/'.local/bin'; bindir.mkdir(parents=True)
+            tmux=bindir/'tmux'
+            tmux.write_text('#!/bin/sh\nexit 0\n'); tmux.chmod(0o755)
             state=home/'state'; state.mkdir()
             calls=home/'calls.jsonl'
             # The fake pgrep models a foreign user's daemon, plus optionally our own.

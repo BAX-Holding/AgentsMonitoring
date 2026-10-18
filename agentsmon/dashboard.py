@@ -122,7 +122,7 @@ AGENT_TABLES
       <table class="w-full text-sm" style="table-layout:fixed;min-width:680px"><colgroup><col style="width:24%"><col style="width:30%"><col style="width:12%"><col style="width:12%"><col style="width:22%"></colgroup><thead>
         <tr class="text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-200">
           <th class="text-left font-medium px-2 py-2">Check</th>
-          <th class="text-left font-medium px-2 py-2">Address</th>
+          <th class="rows-value-label text-left font-medium px-2 py-2">Address</th>
           <th class="text-left font-medium px-2 py-2">Latency</th>
           <th class="text-left font-medium px-2 py-2">Uptime</th>
           <th class="text-left font-medium px-2 py-2">Status</th>
@@ -208,12 +208,13 @@ function renderService(root, s){
     q(root,".m-x-sub").textContent=s.metric_sub||"health check";
   }
   renderTimeline(root, s.timeline, s.timeline_days);
-  renderRows(root, s.rows||[]);
+  renderRows(root, s.rows||[], s.row_details===true);
 }
 // Module rows (one website / tunnel / db per line) — same shape as the agent tables.
-function renderRows(root, rows){
+function renderRows(root, rows, details=false){
   const wrap=q(root,".svc-rows-wrap"); if(!wrap) return;
   wrap.hidden=!rows.length; if(!rows.length) return;
+  q(root,".rows-value-label").textContent=details?"Detail":"Address";
   const tb=q(root,".svc-rows");
   tb.innerHTML=rows.map(r=>{
     const st=STATE[r.state]||STATE.nodata;
@@ -221,7 +222,7 @@ function renderRows(root, rows){
     const sla=r.sla!=null?` · ${r.sla.toFixed(2)} % / ${r.sla_samples||0} samples`:"";
     return `<tr class="border-b border-slate-100 last:border-0">`+
       `<td class="px-2 py-1.5 font-medium text-slate-700 whitespace-nowrap">${esc(r.name)}</td>`+
-      `<td class="px-2 py-1.5"><span class="font-mono text-xs text-slate-500 whitespace-nowrap">${esc(addr)}</span></td>`+
+      `<td class="px-2 py-1.5"><span class="text-xs text-slate-500 ${details?'break-words':'font-mono whitespace-nowrap'}">${esc(details?(r.detail||''):addr)}</span></td>`+
       `<td class="px-2 py-1.5 text-slate-600 text-xs whitespace-nowrap">${fmtLat(r.latency_ms)}</td>`+
       `<td class="px-2 py-1.5 text-slate-600 text-xs whitespace-nowrap" title="time since the last real outage${esc(sla)}">${fmtDuration(r.uptime_seconds)}</td>`+
       `<td class="px-2 py-1.5" title="${esc(r.detail||"")}${r.last_ts?" · "+esc(fmtTime(r.last_ts)):""}"><span class="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium ${st[2]}"><span class="h-2 w-2 rounded-full ${st[0]} shrink-0"></span>${st[1]}</span></td>`+
@@ -441,6 +442,7 @@ def _service_state(cfg: dict, running_agents: int = 0) -> list[dict]:
             "metric": metric, "metric_value": running_agents if metric == "agents" else None,
             "metric_sub": s.get("latency_label", "module" if s.get("command") else "health check"),
             "source": s.get("source", "config"),
+            "row_details": s.get("row_details") is True,
             "rows": _service_rows(name, win_days, min_outage),
             "uptime_seconds": db.uptime_seconds(name, min_outage),
             "sla": sla_pct, "sla_window_days": win_days, "sla_samples": samples,

@@ -26,6 +26,9 @@ class RetestRegressions(unittest.TestCase):
             home = Path(tmp)
             bindir = home / '.local/bin'
             bindir.mkdir(parents=True)
+            tmux = bindir / 'tmux'
+            tmux.write_text('#!/bin/sh\nexit 0\n')
+            tmux.chmod(0o755)
             state = home / 'state'
             cfg = home / 'config.json'
             cfg.write_text(json.dumps({'keepalive': {'enabled': False}}))

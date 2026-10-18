@@ -32,6 +32,13 @@ async def verify(args):
     payload={'agents':[shared,daemon],'agent_tables':[table], 'columns':[], 'services':[],
              'plugins':[],'plugin_errors':[], 'core':{'version':'0.3.0','state':'clean'},
              'sandbox_agents':{'enabled':True,'rows':[extension],'up':True,'stale':False,'age_s':1}}
+    service={'name':'Knowledge health','up':True,'state':'operational','detail':'OK',
+             'row_details':True,'uptime_seconds':60,'sla':100,'sla_window_days':90,'sla_samples':1,
+             'latency_ms':2,'timeline':[],'timeline_days':90,
+             'rows':[{'name':'Index','up':True,'state':'operational','url':'http://127.0.0.1:1234/',
+                      'detail':'42 notes · last write 2026-01-02 <img src=x onerror="window.PWNED=1">',
+                      'latency_ms':1,'uptime_seconds':60,'last_ts':None}]}
+    payload['services']=[service]
     posts=[]
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args): pass
@@ -68,6 +75,18 @@ async def verify(args):
                 upper=page.locator('[data-svc="agents"]')
                 lower=page.locator('[data-svc="fixture:team"]')
                 await lower.locator('tbody td').first.wait_for()
+                card=page.locator('#services section').first
+                # A module can opt into visible metrics without changing stable row identities.
+                assert await card.locator('.rows-value-label').text_content()=='Detail'
+                assert '42 notes' in await card.locator('tbody').inner_text()
+                assert await card.locator('img').count()==0
+                assert await page.evaluate('window.PWNED || null') is None
+                await card.screenshot(path=str(args.out/'service-details.png'))
+                service['row_details']=False
+                await page.evaluate('refresh()')
+                assert await card.locator('.rows-value-label').text_content()=='Address'
+                assert '127.0.0.1:1234' in await card.locator('tbody').inner_text()
+                assert '42 notes' not in await card.locator('tbody').inner_text()
                 await page.wait_for_timeout(350)
                 daemon_status=upper.locator('tbody tr').nth(1).locator('td').nth(4)
                 await page.screenshot(path=str(args.out/'daemon-status.png'),full_page=True)
@@ -121,8 +140,14 @@ async def verify(args):
                     await old.screenshot(path=str(args.out/'reference.png'),full_page=True)
                     await old.close()
                 page.on('dialog',lambda d:d.accept())
-                await lower.locator('[data-act="reload"]').click()
-                await page.wait_for_timeout(200)
+                # The action schedules a delayed refresh. Wait for it before changing
+                # the fixture; otherwise it can detach cells during geometry checks.
+                async with page.expect_response(lambda r:r.url.endswith('/api/state')):
+                    await lower.locator('[data-act="reload"]').click()
+                await page.wait_for_function("""() => {
+                    const button=document.querySelector('[data-svc="fixture:team"] [data-act="reload"]');
+                    return button && !button.disabled;
+                }""")
                 assert posts==[{'name':'Example Agent','action':'reload','table':'fixture:team','row':'example'}],posts
                 payload['columns']=[{'id':'usage:limits','title':'Usage'}]
                 for row in (shared,extension):

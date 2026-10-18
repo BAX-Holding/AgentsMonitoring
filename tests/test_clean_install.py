@@ -9,6 +9,8 @@ import time
 import unittest
 import urllib.request
 
+from agentsmon import __version__
+
 
 class CleanInstall(unittest.TestCase):
     def test_install_without_controlling_terminal_finishes_successfully(self):
@@ -43,7 +45,7 @@ class CleanInstall(unittest.TestCase):
             cli=home/'.local/bin/agentsmon'
             self.assertTrue(cli.is_file())
             version=subprocess.check_output([str(cli),'--version'],env=env,text=True,timeout=10)
-            self.assertIn('0.3.0',version)
+            self.assertIn(__version__,version)
             (home/'config.json').write_text(json.dumps({'tmux_bin':'/nonexistent-tmux',
                 'services':[],'agents':[],'daemons':[],'pinned_daemons':[],
                 'modules_dir':str(home/'modules'),'keepalive':{'enabled':False}}))

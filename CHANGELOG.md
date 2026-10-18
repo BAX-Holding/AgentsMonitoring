@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.1 (2026-10-18)
+
+- Bootstrap the configured tmux server from the cron launcher's shell before
+  starting Python. On macOS this preserves the OS permission attribution of the
+  launcher; it does not grant or bypass TCC permissions. Existing sessions survive.
+- Optional `services[].row_details` shows escaped probe details in the shared
+  service table, preserving row identities and history. Default remains off.
+- English source identifiers and examples, fresh-install instructions for macOS
+  and Ubuntu, and corrected documentation of authentication and action controls.
+- Refresh the package integrity manifest and verify release metadata consistency.
+- Browser acceptance waits for the action's delayed refresh before measuring
+  table geometry. No production renderer change is needed for that test race.
+- Python 3.10–3.14 CI runs the standard-library test suite, lint and package install.
+
 ## 0.3.0 (2026-10-15)
 
 ### Core/plugin boundary

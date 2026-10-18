@@ -26,9 +26,9 @@ def _summary(src, before: str, pull_output: str) -> str:
         return "✓ Already up to date."
     n = subprocess.run(["git", "-C", str(src), "diff", "--name-only", f"{before}..{after}"],
                        capture_output=True, text=True)
-    zmen = len([x for x in n.stdout.splitlines() if x.strip()]) if n.returncode == 0 else 0
-    kus = f"{zmen} file{'s' if zmen != 1 else ''} changed" if zmen else "no file changes"
-    return f"✓ Updated {before} → {after} ({kus})."
+    count = len([x for x in n.stdout.splitlines() if x.strip()]) if n.returncode == 0 else 0
+    detail = f"{count} file{'s' if count != 1 else ''} changed" if count else "no file changes"
+    return f"✓ Updated {before} → {after} ({detail})."
 
 
 def run() -> int:

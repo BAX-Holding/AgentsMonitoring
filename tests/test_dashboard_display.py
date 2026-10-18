@@ -8,7 +8,7 @@
 Both are display-only, but a dashboard that shows the same thing two different ways is
 a dashboard people stop trusting.
 """
-import sys, os, types, unittest
+import sys, os, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agentsmon import detect, dashboard
@@ -66,11 +66,11 @@ class SessionIdFallback(unittest.TestCase):
         self.assertEqual(agents["Alice - Master"]["session_id"], SID)
 
     def test_detected_id_is_not_overwritten(self):
-        jiny = "ffffffff-1111-2222-3333-444444444444"
+        other = "ffffffff-1111-2222-3333-444444444444"
         agents = self._state([{"name": "Alice - Master", "kind": "codex", "label": "GPT-5.6-SOL",
-                               "session_id": jiny, "vendor": "openai", "alive": True,
+                               "session_id": other, "vendor": "openai", "alive": True,
                                "age": 60, "resume_cmd": None, "pids": [1]}])
-        self.assertEqual(agents["Alice - Master"]["session_id"], jiny)
+        self.assertEqual(agents["Alice - Master"]["session_id"], other)
 
     def test_no_uuid_in_restart_stays_none(self):
         cfg = {"agents": [{"name": "X", "restart": "codex resume"}], "pinned_daemons": []}
@@ -243,9 +243,9 @@ class FreshSessionId(unittest.TestCase):
         import time
         a = "aaaaaaaa-1111-2222-3333-444444444444"
         b = "bbbbbbbb-1111-2222-3333-444444444444"
-        fa = self._transcript("/home/alice", a, ['{"type":"permission-mode"}'])
+        self._transcript("/home/alice", a, ['{"type":"permission-mode"}'])
         time.sleep(0.02)
-        fb = self._transcript("/home/alice", b, ['{"type":"permission-mode"}'])
+        self._transcript("/home/alice", b, ['{"type":"permission-mode"}'])
         first, _ = detect._claude_info_for_cwd("/home/alice")
         second, _ = detect._claude_info_for_cwd("/home/alice", {first})
         self.assertNotEqual(first, second)

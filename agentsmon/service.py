@@ -9,6 +9,7 @@ by pgrep) and runs one keepalive pass works everywhere, no login session require
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -39,6 +40,7 @@ def _launcher_path() -> Path:
 def _launcher_content() -> str:
     state = config.state_dir()
     log = state / "agentsmon.log"
+    tmux = shlex.quote(config.load().get("tmux_bin") or "tmux")
     return f"""#!/bin/sh
 # Agents Monitoring launcher — started by cron (@reboot + every minute). Idempotent: starts the
 # dashboard only if it isn't running, then runs one keepalive pass (a no-op if disabled / no agents).
@@ -48,6 +50,8 @@ export AGENTSMON_CONFIG="{config.DEFAULT_PATH}"
 export AGENTSMON_STATE="{config.state_dir()}"
 PY="{_python()}"
 mkdir -p "{state}"
+# Start tmux from this shell before Python: macOS TCC follows the server's launcher.
+{tmux} start-server \\; set -g exit-empty off >/dev/null 2>&1 || true
 # Guard on the dashboard's own pidfile (a plain `pgrep -f "agentsmon dashboard"` also matched any
 # shell whose command line mentioned the dashboard, and then nothing was started — 2026-09-04).
 PIDFILE="{state}/dashboard.pid"

@@ -66,22 +66,22 @@ def pretrust_claude(cwd: str, home: Path | None = None) -> str:
         return ""                      # unreadable or not JSON — never overwrite what we can't read
     if not isinstance(d, dict):
         return ""
-    zapsano = []
+    recorded = []
     if not d.get("hasCompletedOnboarding"):
         d["hasCompletedOnboarding"] = True
-        zapsano.append("onboarding")
-    projekty = d.setdefault("projects", {})
-    projekt = projekty.setdefault(cwd, {})
-    if not projekt.get("hasTrustDialogAccepted"):
-        projekt["hasTrustDialogAccepted"] = True
-        zapsano.append(f"trusted folder {cwd}")
-    if zapsano and not _zapis_json(p, d):
+        recorded.append("onboarding")
+    projects = d.setdefault("projects", {})
+    project = projects.setdefault(cwd, {})
+    if not project.get("hasTrustDialogAccepted"):
+        project["hasTrustDialogAccepted"] = True
+        recorded.append(f"trusted folder {cwd}")
+    if recorded and not _write_json(p, d):
         return ""
-    zapsano += _skip_bypass_warning(home or Path.home())
-    return " + ".join(zapsano)
+    recorded += _skip_bypass_warning(home or Path.home())
+    return " + ".join(recorded)
 
 
-def _zapis_json(p: Path, data: dict) -> bool:
+def _write_json(p: Path, data: dict) -> bool:
     """Atomic, owner-only write. A half-written config would lock the user out of Claude."""
     tmp = p.with_name(p.name + ".agentsmon-tmp")
     try:
@@ -111,7 +111,7 @@ def _skip_bypass_warning(home: Path) -> list[str]:
     if not isinstance(d, dict) or d.get("skipDangerousModePermissionPrompt"):
         return []
     d["skipDangerousModePermissionPrompt"] = True
-    return ["bypass-mode warning"] if _zapis_json(p, d) else []
+    return ["bypass-mode warning"] if _write_json(p, d) else []
 
 
 def claude_is_logged_in(home: Path | None = None) -> bool:
@@ -134,8 +134,8 @@ def wait_for_tui(name: str, timeout: float = 25.0) -> bool:
     something themselves."""
     import time
     shells = {"sh", "bash", "zsh", "fish", "dash", "-sh", "-bash", "-zsh"}
-    konec = time.monotonic() + timeout
-    while time.monotonic() < konec:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         r = subprocess.run(["tmux", "display-message", "-p", "-t", name, "#{pane_current_command}"],
                            capture_output=True, text=True)
         if r.returncode == 0 and r.stdout.strip() and r.stdout.strip() not in shells:
@@ -478,9 +478,9 @@ def new() -> int:
     # Answer Claude's first-run prompts BEFORE launching, or the agent sits on the trust dialog
     # forever and never appears anywhere.
     if chosen["kind"] == "claude-code":
-        zapsano = pretrust_claude(cwd)
-        if zapsano:
-            print(f"  ✓ pre-answered Claude's first-run prompts ({zapsano})")
+        recorded = pretrust_claude(cwd)
+        if recorded:
+            print(f"  ✓ pre-answered Claude's first-run prompts ({recorded})")
         if not claude_is_logged_in():
             print("  ! Claude is not logged in yet — the agent will start but can't work.")
             print(f"    Log in once:  tmux attach -t {name}   then  /login")

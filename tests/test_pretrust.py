@@ -18,11 +18,11 @@ class FirstRunPromptsArePreAnswered(unittest.TestCase):
         """Mutation: drop the `hasTrustDialogAccepted` assignment → the dialog still blocks."""
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)
-            zapsano = pretrust_claude("/home/alice", home)
+            recorded = pretrust_claude("/home/alice", home)
             cfg = json.loads((home / ".claude.json").read_text("utf-8"))
             self.assertTrue(cfg["projects"]["/home/alice"]["hasTrustDialogAccepted"])
             self.assertTrue(cfg["hasCompletedOnboarding"])
-            self.assertIn("trusted folder /home/alice", zapsano)
+            self.assertIn("trusted folder /home/alice", recorded)
 
     def test_keeps_everything_else_in_the_config(self):
         """Mutation: write a fresh dict instead of the parsed one → the user loses their config."""
@@ -30,12 +30,12 @@ class FirstRunPromptsArePreAnswered(unittest.TestCase):
             home = Path(d)
             (home / ".claude.json").write_text(json.dumps({
                 "numStartups": 103, "customApiKeyResponses": {"approved": ["abc"]},
-                "projects": {"/jiny": {"hasTrustDialogAccepted": True, "lastCost": 1.5}}}), "utf-8")
+                "projects": {"/other": {"hasTrustDialogAccepted": True, "lastCost": 1.5}}}), "utf-8")
             pretrust_claude("/home/alice", home)
             cfg = json.loads((home / ".claude.json").read_text("utf-8"))
             self.assertEqual(cfg["numStartups"], 103)
             self.assertEqual(cfg["customApiKeyResponses"], {"approved": ["abc"]})
-            self.assertEqual(cfg["projects"]["/jiny"]["lastCost"], 1.5)
+            self.assertEqual(cfg["projects"]["/other"]["lastCost"], 1.5)
             self.assertTrue(cfg["projects"]["/home/alice"]["hasTrustDialogAccepted"])
 
     def test_is_a_no_op_when_already_trusted(self):
@@ -43,16 +43,16 @@ class FirstRunPromptsArePreAnswered(unittest.TestCase):
         purpose: a needless rewrite would reformat it to indent=2, so byte equality is what proves
         the write was skipped (comparing the parsed value would pass either way).
 
-        Mutation: drop the `if not zapsano: return ""` guard → the config is rewritten."""
+        Mutation: drop the `if not recorded: return ""` guard → the config is rewritten."""
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)
-            puvodni = '{"hasCompletedOnboarding":true,"projects":{"/home/alice":{"hasTrustDialogAccepted":true}}}'
-            (home / ".claude.json").write_text(puvodni, "utf-8")
+            original = '{"hasCompletedOnboarding":true,"projects":{"/home/alice":{"hasTrustDialogAccepted":true}}}'
+            (home / ".claude.json").write_text(original, "utf-8")
             (home / ".claude").mkdir()
             (home / ".claude" / "settings.json").write_text(
                 '{"skipDangerousModePermissionPrompt":true}', "utf-8")
             self.assertEqual(pretrust_claude("/home/alice", home), "")
-            self.assertEqual((home / ".claude.json").read_text("utf-8"), puvodni,
+            self.assertEqual((home / ".claude.json").read_text("utf-8"), original,
                              "the config was rewritten even though nothing changed")
 
     def test_records_the_bypass_mode_acknowledgement(self):
@@ -62,10 +62,10 @@ class FirstRunPromptsArePreAnswered(unittest.TestCase):
         Mutation: drop the `_skip_bypass_warning` call → the agent stops on the warning."""
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)
-            zapsano = pretrust_claude("/home/alice", home)
-            nastaveni = json.loads((home / ".claude" / "settings.json").read_text("utf-8"))
-            self.assertTrue(nastaveni["skipDangerousModePermissionPrompt"])
-            self.assertIn("bypass-mode warning", zapsano)
+            recorded = pretrust_claude("/home/alice", home)
+            settings = json.loads((home / ".claude" / "settings.json").read_text("utf-8"))
+            self.assertTrue(settings["skipDangerousModePermissionPrompt"])
+            self.assertIn("bypass-mode warning", recorded)
 
     def test_keeps_other_settings_when_recording_the_bypass_acknowledgement(self):
         """Mutation: write a fresh dict → the user loses hooks, model and permissions."""

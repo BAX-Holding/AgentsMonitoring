@@ -294,7 +294,7 @@ def manager(cfg):
 
 def collect(cfg,agents):
     """Never run or wait for plugins on the HTTP request thread."""
-    global _cache,_refreshing
+    global _refreshing
     with _lock:
         m=manager(cfg)
         signature=json.dumps([{k:v for k,v in a.items() if k in PUBLIC_FIELDS and k!='age'} for a in agents],sort_keys=True)

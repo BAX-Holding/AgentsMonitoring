@@ -33,9 +33,56 @@ tmux sessions  ⇄  Agents Monitoring  ⇄  status page + keepalive
 
 ## Quick start
 
+### Prerequisites
+
+**Ubuntu 22.04 / 24.04** (run the installer as your normal user, not root):
+
+```bash
+sudo apt-get update
+sudo apt-get install -y python3 git tmux curl cron
+sudo service cron start
+```
+
+Python 3.10+ is required; pip is optional. Minimal containers need a running cron
+daemon and an init process to reap children (`docker run --init`). Users on one
+machine must choose different dashboard ports.
+
+**macOS** (with [Homebrew](https://brew.sh/) already installed):
+
+```bash
+brew install python tmux git
+export PATH="$(brew --prefix)/bin:$HOME/.local/bin:$PATH"
+python3 --version
+```
+
+Run setup from the normal user's Terminal. Allow cron access if macOS prompts for
+it. Agents that need protected files may also require an explicit OS permission
+for their launcher/tmux. The installer cannot grant permissions, and changing a
+launcher does not change the permissions of an already-running tmux server.
+Check the first scheduled run with `agentsmon doctor`; never restart active
+sessions just to test OS permissions.
+
+### Install and verify
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/petrludwig-collab/AgentsMonitoring/main/install.sh | bash
 ```
+
+If the installer had no controlling terminal (SSH without `-t`, `docker exec`,
+or automation), it finishes successfully without running setup. Run the wizard
+explicitly in your terminal:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+agentsmon setup
+agentsmon doctor
+agentsmon status
+```
+
+Choose a port and HTTP login in the wizard, then open the printed URL. An
+unauthenticated request to a protected dashboard returns HTTP 401; after login
+it returns HTTP 200. Setup can register `@reboot` and every-minute cron entries
+for the current user. It does not require root.
 
 …or from a clone:
 
@@ -105,7 +152,7 @@ The API does not pass dashboard auth/config to plugins. See [API, actions, entry
 optional account-scoped Usage](docs/PLUGINS.md), and [migration/rollback](docs/MIGRATION-0.3.md).
 
 `agentsmon doctor` prints the package version, release identifier, content hash, clean/modified
-state and loaded plugin versions/errors. The footer shows `core v0.3.0 (clean)` or `modified`.
+state and loaded plugin versions/errors. The footer shows `core v0.3.1 (clean)` or `modified`.
 The included manifest detects changed, missing and added package files. `clean` means equality
 to that manifest; it is not a cryptographic publisher signature. A review candidate is not
 yet a published GitHub release. Compare the manifest/content hash to the reviewed release
@@ -186,8 +233,8 @@ hash (`dashboard.auth.pwhash`), never in plaintext. Remove the `auth` block to t
   table (e.g. a gateway, a worker): each has `name`, `process` (pgrep), `tag` (model/label shown),
   `vendor` (tag colour: anthropic/openai/google) and optional `name_color` (highlight the name:
   red/gold/green/blue).
-- **pinned_daemons[].health_url** — give a pinned daemon a health endpoint and its **latency**
-  is shown in the Status column (in place of "Running").
+- **pinned_daemons[].health_url** — give a pinned daemon a health endpoint. Healthy rows
+  show "Running"; the Status tooltip includes the measured latency.
 - **services[].metric** — the card's third metric: `latency` (this service's current latency,
   default), `system_latency` (average current latency across **all** health‑checked components —
   a system overview number), `avg_latency` (this service's average over the SLA window), or
@@ -218,6 +265,11 @@ hash (`dashboard.auth.pwhash`), never in plaintext. Remove the `auth` block to t
   same name written by hand in `services[]` wins. The folder is yours — nothing in it is part of
   this repo, so private checks stay private while the dashboard itself keeps updating from git.
 
+- **services[].row_details** — opt-in boolean: show each module row's escaped `detail`
+  text in the second table column instead of its address. Useful for counts and
+  timestamps that should be visible without hovering. Default false preserves
+  existing layouts. Row identifiers and history keys stay unchanged.
+
 - **probe.min_outage_samples** — how many consecutive failed probes count as a real outage for
   the **Uptime** metric (default 3); isolated transient blips don't reset uptime (SLA still
   counts them).
@@ -226,15 +278,18 @@ hash (`dashboard.auth.pwhash`), never in plaintext. Remove the `auth` block to t
   recreate the tmux session). Without it, a dead agent can be detected but not revived.
 - **daemons[].restart** — optional command to run when the daemon is down.
 - **dashboard.host** — keep `127.0.0.1` for local-only; set a VPN/LAN address to reach it
-  remotely (then protect it with your firewall — the dashboard has no auth).
+  remotely. Non-loopback binds require HTTP authentication; also restrict access
+  with your firewall and use a trusted VPN or HTTPS reverse proxy.
 
 ---
 
 ## Security note
 
-The dashboard is **read-only**. Bind it to `127.0.0.1` (default) or a trusted VPN address, never
-the public internet. If you expose it beyond localhost, enable the **HTTP login** in setup
-(stored as a SHA-256 hash). Restart commands run as your user.
+The dashboard includes **restart/stop actions** as well as status views. Bind it
+to `127.0.0.1` (default) or a trusted VPN address, never directly to the public
+internet. HTTP login is mandatory beyond loopback; use a trusted encrypted
+transport because HTTP Basic auth alone does not encrypt traffic. Passwords are
+stored as SHA-256 hashes. Restart commands and trusted plugins run as your user.
 
 ---
 
