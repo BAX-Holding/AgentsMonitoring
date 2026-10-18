@@ -1,9 +1,11 @@
 import json
+import io
 import os
 from pathlib import Path
 import socket
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 import unittest
@@ -13,6 +15,103 @@ from agentsmon import __version__
 
 
 class CleanInstall(unittest.TestCase):
+    def archive_fixture(self, home, version):
+        archive = home / 'fixture.tgz'
+        with tarfile.open(archive, 'w:gz') as out:
+            for name, text in {
+                'pyproject.toml': '[project]\nname="agents-monitoring"\n',
+                'agentsmon/__init__.py': f'__version__ = "{version}"\n',
+            }.items():
+                data = text.encode()
+                item = tarfile.TarInfo('AgentsMonitoring-main/' + name)
+                item.size = len(data)
+                out.addfile(item, io.BytesIO(data))
+        return archive
+
+    def installer_fixture(self, home):
+        bindir = home / 'bin'
+        bindir.mkdir()
+        scripts = {
+            'git': '#!/bin/sh\nexit 1\n',
+            'sleep': '#!/bin/sh\nexit 0\n',
+            'curl': '#!/bin/sh\n[ "${FAIL_DOWNLOAD:-0}" = 0 ] || exit 1\n'
+                    'while [ "$1" != -o ]; do shift; done\ncp "$FIXTURE_ARCHIVE" "$2"\n',
+        }
+        for name, text in scripts.items():
+            path = bindir / name
+            path.write_text(text)
+            path.chmod(0o755)
+        return {'HOME': str(home),
+                'PATH': f'{bindir}:{Path(sys.executable).parent}:{os.defpath}',
+                'FIXTURE_ARCHIVE': str(home / 'fixture.tgz')}
+
+    def run_installer(self, home, env, cwd=None):
+        root = Path(__file__).resolve().parents[1]
+        return subprocess.run(['bash', str(root / 'install.sh'), '--no-setup', '--no-pip'],
+                              cwd=cwd or home, env=env, capture_output=True, text=True, timeout=20)
+
+    def test_archive_install_can_be_updated_by_rerunning_installer(self):
+        for from_source in (False, True):
+            with self.subTest(from_source=from_source), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                env = self.installer_fixture(home)
+                self.archive_fixture(home, 'old')
+                first = self.run_installer(home, env)
+                self.assertEqual(first.returncode, 0, first.stderr)
+                source = home / '.agentsmon-src'
+                (source / 'obsolete.txt').write_text('old release file')
+                config = home / '.config/agentsmon/config.json'
+                config.parent.mkdir(parents=True)
+                config.write_text('{"preserve": true}')
+                self.archive_fixture(home, 'new')
+                second = self.run_installer(home, env, source if from_source else home)
+                self.assertEqual(second.returncode, 0, second.stderr)
+                self.assertIn('new', (source / 'agentsmon/__init__.py').read_text())
+                self.assertFalse((source / 'obsolete.txt').exists())
+                self.assertEqual(config.read_text(), '{"preserve": true}')
+                self.assertTrue((source / '.agentsmon-archive-install').is_file())
+                self.assertEqual(list(home.glob('.agentsmon-src.stage.*')), [])
+
+    def test_failed_archive_update_preserves_previous_release(self):
+        for failure in ('download', 'invalid_archive', 'publish'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                env = self.installer_fixture(home)
+                source = home / '.agentsmon-src'
+                source.mkdir()
+                (source / '.agentsmon-archive-install').write_text('agentsmon-archive-v1\n')
+                (source / 'sentinel').write_text('previous release')
+                archive = self.archive_fixture(home, 'new')
+                if failure == 'download':
+                    env['FAIL_DOWNLOAD'] = '1'
+                elif failure == 'invalid_archive':
+                    archive.write_text('invalid archive')
+                else:
+                    mv = home / 'bin/mv'
+                    mv.write_text('#!/bin/sh\ncase "$1" in */AgentsMonitoring-*) exit 1;; esac\n'
+                                  'exec /bin/mv "$@"\n')
+                    mv.chmod(0o755)
+                result = self.run_installer(home, env)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual((source / 'sentinel').read_text(), 'previous release')
+                self.assertEqual(list(home.glob('.agentsmon-src.stage.*')), [])
+
+    def test_git_pull_retries_noninteractively_after_transient_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            env = self.installer_fixture(home)
+            source = home / '.agentsmon-src'
+            (source / '.git').mkdir(parents=True)
+            (source / 'sentinel').write_text('local work')
+            git = home / 'bin/git'
+            git.write_text('#!/bin/sh\n[ "$GIT_TERMINAL_PROMPT" = 0 ] || exit 91\n'
+                           'printf "attempt\\n" >> "$HOME/attempts"\n'
+                           '[ "$(wc -l < "$HOME/attempts")" -ge 2 ]\n')
+            result = self.run_installer(home, env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((home / 'attempts').read_text().splitlines(), ['attempt', 'attempt'])
+            self.assertEqual((source / 'sentinel').read_text(), 'local work')
+
     def test_failed_update_never_falls_back_over_existing_checkout(self):
         self.check_existing_install_is_preserved(git_checkout=True)
 
@@ -31,7 +130,8 @@ class CleanInstall(unittest.TestCase):
             sentinel.write_text('uncommitted work')
             bindir = home / 'bin'
             bindir.mkdir()
-            for name, text in [('git', '#!/bin/sh\nexit 1\n'),
+            for name, text in [('git', '#!/bin/sh\nprintf "attempt\\n" >> "$HOME/attempts"\nexit 1\n'),
+                               ('sleep', '#!/bin/sh\nexit 0\n'),
                                ('curl', '#!/bin/sh\ntouch "$HOME/network-attempt"\nexit 1\n')]:
                 path = bindir / name
                 path.write_text(text)
@@ -43,6 +143,9 @@ class CleanInstall(unittest.TestCase):
             self.assertEqual(sentinel.read_text(), 'uncommitted work')
             self.assertFalse((home / 'network-attempt').exists(), 'Must not replace an existing install')
             self.assertIn('preserved', run.stderr)
+            if git_checkout:
+                self.assertEqual((home / 'attempts').read_text().splitlines(), ['attempt'] * 3)
+                self.assertIn('re-run', run.stderr)
 
     def test_install_without_controlling_terminal_finishes_successfully(self):
         root=Path(__file__).resolve().parents[1]

@@ -41,32 +41,67 @@ say "Using $("$PY" --version)"
 command -v tmux >/dev/null || say "note: tmux not found — agents run in tmux, install it before setup."
 
 # Get the code (clone unless already inside it).
-if [ -f pyproject.toml ] && grep -q "agents-monitoring" pyproject.toml 2>/dev/null; then
+if [ -f pyproject.toml ] && grep -q "agents-monitoring" pyproject.toml 2>/dev/null &&
+   [ ! -e .agentsmon-archive-install ]; then
   SRC="$(pwd)"; say "Installing from current directory"
 else
   SRC="${HOME}/.agentsmon-src"
+  # Re-running from inside our archive must refresh it too, not reinstall old code.
+  if [ -f .agentsmon-archive-install ]; then SRC="$(pwd -P)"; cd "$HOME"; fi
   # git first — a real clone keeps `agentsmon update` working. But git over HTTPS can be
   # refused where plain HTTPS is fine: from a datacentre IP that GitHub rate-limits for
   # anonymous git, a PUBLIC repo answers 401 and git stops to ask for a password. On a fresh
   # server that is the user's first impression of the tool, and an installer must never block
   # on a prompt, so fall back to the source archive.
-  fetch_tarball() {
+  is_archive_install() {
+    [ -d "$SRC" ] && [ ! -L "$SRC" ] &&
+      [ -f "$SRC/.agentsmon-archive-install" ] && [ ! -L "$SRC/.agentsmon-archive-install" ] &&
+      [ "$(cat "$SRC/.agentsmon-archive-install")" = agentsmon-archive-v1 ]
+  }
+  fetch_tarball() (
     say "Fetching the source archive (no git)"
-    tmp="$(mktemp -d)"
+    # Same filesystem: prepare completely before touching the current installation.
+    tmp="$(mktemp -d "${SRC}.stage.XXXXXX")" || return 1
+    published=0
+    cleanup_archive() {
+      if [ "$published" -eq 0 ] && [ -d "$tmp/previous" ]; then
+        if [ -e "$SRC" ] || [ -L "$SRC" ] || ! mv "$tmp/previous" "$SRC"; then
+          printf 'Could not restore %s; previous files preserved in %s/previous.\n' "$SRC" "$tmp" >&2
+          return
+        fi
+      fi
+      rm -rf "$tmp"
+    }
+    trap cleanup_archive EXIT
+    trap 'exit 1' HUP INT TERM
     url="https://codeload.github.com/petrludwig-collab/AgentsMonitoring/tar.gz/refs/heads/main"
     curl -fsSL --retry 2 "$url" -o "$tmp/src.tgz" || return 1
     tar xzf "$tmp/src.tgz" -C "$tmp" || return 1
     dir="$(find "$tmp" -maxdepth 1 -type d -name 'AgentsMonitoring-*' | head -1)"
     [ -n "$dir" ] || return 1
-    rm -rf "$SRC"; mkdir -p "$SRC"; cp -R "$dir"/. "$SRC"/ || return 1
-    rm -rf "$tmp"
+    [ -f "$dir/agentsmon/__init__.py" ] &&
+      grep -q 'agents-monitoring' "$dir/pyproject.toml" || return 1
+    printf 'agentsmon-archive-v1\n' > "$dir/.agentsmon-archive-install" || return 1
+    if [ -e "$SRC" ] || [ -L "$SRC" ]; then
+      is_archive_install || return 1
+      mv "$SRC" "$tmp/previous" || return 1
+    fi
+    mv "$dir" "$SRC" || return 1
+    published=1
     say "Installed from archive — 'agentsmon update' will ask you to re-run this installer."
-  }
+  )
   if [ -d "$SRC/.git" ]; then
     say "Updating $SRC"
     # A failed update may mean local work or a divergent branch. Never replace it
     # with an archive: preserve the checkout and let its owner resolve the error.
-    GIT_TERMINAL_PROMPT=0 git -C "$SRC" pull --ff-only || err "Could not update $SRC; existing files preserved. Resolve the git error before retrying."
+    updated=0
+    for n in 1 2 3; do
+      if GIT_TERMINAL_PROMPT=0 git -C "$SRC" pull --ff-only; then updated=1; break; fi
+      [ "$n" -eq 3 ] || { say "Update refused, retrying ($((n+1))/3)"; sleep 2; }
+    done
+    [ "$updated" -eq 1 ] || err "Could not update $SRC after 3 attempts; existing files preserved. Check the git error and re-run this installer to try again."
+  elif is_archive_install; then
+    fetch_tarball || err "Could not update the archive; previous files preserved. Re-run this installer to try again."
   elif [ -e "$SRC" ] || [ -L "$SRC" ]; then
     err "$SRC already exists without a git checkout; files preserved. Back it up and move it aside before a fresh install."
   elif command -v git >/dev/null 2>&1; then

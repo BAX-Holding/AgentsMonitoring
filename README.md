@@ -84,9 +84,15 @@ unauthenticated request to a protected dashboard returns HTTP 401; after login
 it returns HTTP 200. Setup can register `@reboot` and every-minute cron entries
 for the current user. It does not require root.
 
-If updating an existing checkout fails, the installer stops and preserves its
-files. Resolve the reported git error before retrying. Existing archive installs
-must be backed up and moved aside explicitly before a fresh installation.
+Git updates get three non-interactive attempts. If they all fail, the installer
+stops and preserves the checkout; check the git error and re-run to try again.
+Archive installations created by this installer carry an
+`.agentsmon-archive-install` marker. Re-run the installer to update them: it
+downloads and checks the new source beside the old directory, then replaces it
+by renaming, restoring the previous directory if replacement fails. Configuration
+and history outside the source directory remain untouched. An unmarked non-git
+directory (including older archive installs) is preserved and reported as an
+error; back it up and move it aside explicitly before a fresh installation.
 
 …or from a clone:
 
