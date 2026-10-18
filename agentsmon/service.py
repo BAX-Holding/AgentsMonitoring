@@ -77,7 +77,11 @@ def refresh_bytecode(package: Path) -> None:
 
 
 def _write_launcher() -> Path:
-    refresh_bytecode(Path(agentsmon.__file__).resolve().parent)
+    package = Path(agentsmon.__file__).resolve().parent
+    # Git checkouts need this; a pip/system package may be read-only and its
+    # bytecode belongs to the package installer, not the user's service setup.
+    if (package.parent / '.git').exists():
+        refresh_bytecode(package)
     path = _launcher_path()
     # A cron shell may still be reading the old launcher: never truncate it in place.
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,

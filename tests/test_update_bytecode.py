@@ -14,9 +14,24 @@ from agentsmon import config, service, updater, wizard
 
 
 class UpdateBytecode(unittest.TestCase):
+    def test_launcher_does_not_write_bytecode_in_a_packaged_install(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            package = home / 'site-packages/agentsmon'
+            package.mkdir(parents=True)
+            init = package / '__init__.py'
+            init.write_text('__version__ = "0.3.1"\n')
+            with patch.object(service.agentsmon, '__file__', str(init)), \
+                    patch.object(config, 'state_dir', return_value=home), \
+                    patch.object(config, 'load', return_value={}), \
+                    patch.object(service, 'refresh_bytecode') as refresh:
+                service._write_launcher()
+            refresh.assert_not_called()
+
     def test_launcher_refresh_handles_update_started_by_old_loaded_updater(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
+            (home / '.git').mkdir()
             package = home / 'agentsmon'
             package.mkdir()
             init = package / '__init__.py'
