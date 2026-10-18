@@ -13,6 +13,37 @@ from agentsmon import __version__
 
 
 class CleanInstall(unittest.TestCase):
+    def test_failed_update_never_falls_back_over_existing_checkout(self):
+        self.check_existing_install_is_preserved(git_checkout=True)
+
+    def test_existing_non_git_source_is_never_replaced(self):
+        self.check_existing_install_is_preserved(git_checkout=False)
+
+    def check_existing_install_is_preserved(self, git_checkout):
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            source = home / '.agentsmon-src'
+            source.mkdir()
+            if git_checkout:
+                (source / '.git').mkdir()
+            sentinel = source / 'user-work.txt'
+            sentinel.write_text('uncommitted work')
+            bindir = home / 'bin'
+            bindir.mkdir()
+            for name, text in [('git', '#!/bin/sh\nexit 1\n'),
+                               ('curl', '#!/bin/sh\ntouch "$HOME/network-attempt"\nexit 1\n')]:
+                path = bindir / name
+                path.write_text(text)
+                path.chmod(0o755)
+            env = {'HOME': tmp, 'PATH': f'{bindir}:{Path(sys.executable).parent}:{os.defpath}'}
+            run = subprocess.run(['bash', str(root / 'install.sh'), '--no-setup', '--no-pip'],
+                                 cwd=home, env=env, capture_output=True, text=True, timeout=15)
+            self.assertNotEqual(run.returncode, 0)
+            self.assertEqual(sentinel.read_text(), 'uncommitted work')
+            self.assertFalse((home / 'network-attempt').exists(), 'Must not replace an existing install')
+            self.assertIn('preserved', run.stderr)
+
     def test_install_without_controlling_terminal_finishes_successfully(self):
         root=Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as tmp:

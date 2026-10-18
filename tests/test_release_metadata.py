@@ -4,12 +4,15 @@ from pathlib import Path
 import re
 import unittest
 
-from agentsmon import __version__
+from agentsmon import __version__, config
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class ReleaseMetadata(unittest.TestCase):
+    def test_module_example_is_generic_english(self):
+        self.assertIn('name=VPN status,', config._module_header.__doc__)
+
     def test_metadata_matches_current_release(self):
         project = (ROOT / 'pyproject.toml').read_text()
         version = re.search(r'^version = "([^"]+)"', project, re.MULTILINE).group(1)

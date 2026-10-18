@@ -84,6 +84,10 @@ unauthenticated request to a protected dashboard returns HTTP 401; after login
 it returns HTTP 200. Setup can register `@reboot` and every-minute cron entries
 for the current user. It does not require root.
 
+If updating an existing checkout fails, the installer stops and preserves its
+files. Resolve the reported git error before retrying. Existing archive installs
+must be backed up and moved aside explicitly before a fresh installation.
+
 …or from a clone:
 
 ```bash

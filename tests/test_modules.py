@@ -47,16 +47,16 @@ class CommandProbe(unittest.TestCase):
 class ModuleDiscovery(unittest.TestCase):
     def test_executables_become_services_with_header_settings(self):
         with tempfile.TemporaryDirectory() as d:
-            _exe(Path(d) / "vpn_do_stovky.sh", "#!/bin/sh\n# agentsmon: name=VPN do Stovky, latency_label=round trip, timeout_seconds=7\necho ok\n")
+            _exe(Path(d) / "vpn_status.sh", "#!/bin/sh\n# agentsmon: name=VPN status, latency_label=round trip, timeout_seconds=7\necho ok\n")
             _exe(Path(d) / "plain-check.py", "#!/usr/bin/env python3\nprint('ok')\n")
             (Path(d) / "_helper.sh").write_text("#!/bin/sh\n", "utf-8")            # helper: underscore
             (Path(d) / "notes.txt").write_text("not a module", "utf-8")            # not executable
             found = config.discover_modules({"modules_dir": d, "services": []})
             names = {m["name"]: m for m in found}
-            self.assertEqual(set(names), {"VPN do Stovky", "Plain Check"})
-            self.assertEqual(names["VPN do Stovky"]["latency_label"], "round trip")
-            self.assertEqual(names["VPN do Stovky"]["timeout_seconds"], 7.0)
-            self.assertEqual(names["VPN do Stovky"]["source"], "module")
+            self.assertEqual(set(names), {"VPN status", "Plain Check"})
+            self.assertEqual(names["VPN status"]["latency_label"], "round trip")
+            self.assertEqual(names["VPN status"]["timeout_seconds"], 7.0)
+            self.assertEqual(names["VPN status"]["source"], "module")
             self.assertTrue(names["Plain Check"]["command"].endswith("plain-check.py"))
 
     def test_a_hand_written_service_keeps_priority_over_a_module_of_the_same_name(self):
@@ -107,12 +107,12 @@ class ModuleSamples(unittest.TestCase):
 
     def test_command_detail_leads_and_process_is_mentioned_only_when_down(self):
         with tempfile.TemporaryDirectory() as d:
-            _exe(Path(d) / "m.sh", "#!/bin/sh\necho 'Master=up Sol=up'\n")
+            _exe(Path(d) / "m.sh", "#!/bin/sh\necho 'WorkerA=up WorkerB=up'\n")
             cfg = {"services": [{"name": "Bridge X", "process": "definitely-not-running-zzz", "command": str(Path(d) / "m.sh")}],
                    "probe": {"interval_seconds": 60}}
             probe.probe_once(cfg)
             cur = db.last("Bridge X")
-            self.assertFalse(cur["up"]); self.assertEqual(cur["detail"], "Master=up Sol=up proc=down")
+            self.assertFalse(cur["up"]); self.assertEqual(cur["detail"], "WorkerA=up WorkerB=up proc=down")
 
     def test_system_card_uses_the_latest_sample_instead_of_rerunning_the_module(self):
         """Mutation: remove the ``command`` branch in ``_system_health`` → the module is treated

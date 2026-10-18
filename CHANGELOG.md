@@ -13,6 +13,8 @@
 - Browser acceptance waits for the action's delayed refresh before measuring
   table geometry. No production renderer change is needed for that test race.
 - Python 3.10–3.14 CI runs the standard-library test suite, lint and package install.
+- Preserve existing source files when an installer update fails or finds a
+  non-git directory; never replace local work with the archive fallback.
 
 ## 0.3.0 (2026-10-15)
 

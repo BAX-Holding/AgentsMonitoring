@@ -47,15 +47,15 @@ class RowsParsing(unittest.TestCase):
 
 class RowsRecordedAndShown(unittest.TestCase):
     def test_probe_records_each_row_and_the_card_lists_them(self):
-        cfg = {"services": [{"name": "Weby", "command": ROWS_CMD, "timeout_seconds": 5}],
+        cfg = {"services": [{"name": "Websites", "command": ROWS_CMD, "timeout_seconds": 5}],
                "probe": {"sla_window_days": 1, "timeline_days": 1, "min_outage_samples": 3}}
         probe.probe_once(cfg)
-        self.assertEqual(db.last("Weby")["up"], 0, "card state = module's overall up")
-        self.assertEqual(db.last("Weby › prod")["up"], 1)
-        self.assertEqual(db.last("Weby › staging")["up"], 0)
-        self.assertEqual(db.last("Weby › staging")["detail"], "connection refused")
-        self.assertEqual([r["name"] for r in probe.service_rows("Weby")], ["prod", "staging"])
-        card = [s for s in dashboard._service_state(cfg) if s["name"] == "Weby"][0]
+        self.assertEqual(db.last("Websites")["up"], 0, "card state = module's overall up")
+        self.assertEqual(db.last("Websites › prod")["up"], 1)
+        self.assertEqual(db.last("Websites › staging")["up"], 0)
+        self.assertEqual(db.last("Websites › staging")["detail"], "connection refused")
+        self.assertEqual([r["name"] for r in probe.service_rows("Websites")], ["prod", "staging"])
+        card = [s for s in dashboard._service_state(cfg) if s["name"] == "Websites"][0]
         self.assertEqual(card["state"], "outage")
         rows = card["rows"]
         self.assertEqual([(r["name"], r["state"]) for r in rows], [("prod", "operational"), ("staging", "outage")])

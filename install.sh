@@ -64,7 +64,11 @@ else
   }
   if [ -d "$SRC/.git" ]; then
     say "Updating $SRC"
-    GIT_TERMINAL_PROMPT=0 git -C "$SRC" pull --ff-only || fetch_tarball || err "Could not fetch the project."
+    # A failed update may mean local work or a divergent branch. Never replace it
+    # with an archive: preserve the checkout and let its owner resolve the error.
+    GIT_TERMINAL_PROMPT=0 git -C "$SRC" pull --ff-only || err "Could not update $SRC; existing files preserved. Resolve the git error before retrying."
+  elif [ -e "$SRC" ] || [ -L "$SRC" ]; then
+    err "$SRC already exists without a git checkout; files preserved. Back it up and move it aside before a fresh install."
   elif command -v git >/dev/null 2>&1; then
     say "Cloning into $SRC"
     # GitHub answers 401 to anonymous git from datacentre IPs intermittently — the very next

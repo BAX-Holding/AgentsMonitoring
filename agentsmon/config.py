@@ -73,7 +73,7 @@ MODULE_HEADER = re.compile(r"^\s*(?:#|//|;|--)\s*agentsmon:\s*(.+)$")
 
 
 def _module_header(path: Path) -> dict:
-    """``# agentsmon: name=VPN do Stovky, latency_label=round trip`` in the first lines of a
+    """``# agentsmon: name=VPN status, latency_label=round trip`` in the first lines of a
     module → its card settings. Absent = defaults (name from the file name)."""
     out: dict = {}
     try:
