@@ -299,8 +299,9 @@ function renderAgents(root, agents, summary=null, columns=[]){
       : nameInner;
     // Telegram deep-link icon for agents bridged to a bot (opens t.me/<bot> in a new tab).
     const tg=a.telegram_url?` <a href="${esc(a.telegram_url)}" target="_blank" rel="noopener" title="Open @${esc(a.telegram_bot)} in Telegram" class="inline-flex align-middle ml-1 hover:opacity-70"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="#229ED9"><path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.27 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z"/></svg></a>`:"";
+    const recovery=a.restart_warning?`<br><span class="text-[11px] text-amber-600" title="${esc(a.restart_warning)}">⚠ Fresh conversation</span>`:"";
     tr.innerHTML=
-      `<td class="px-2 py-1.5 font-medium text-slate-700 whitespace-nowrap">${nameCell}${tg}</td>`+
+      `<td class="px-2 py-1.5 font-medium text-slate-700 whitespace-nowrap">${nameCell}${tg}${recovery}</td>`+
       `<td class="px-2 py-1.5 whitespace-nowrap"><span title="${esc(a.account?'Account: '+a.account:a.label)}" class="inline-block rounded px-1.5 py-0.5 text-[11px] font-medium ${tcls}">${esc(a.label)}</span>${a.metadata_error?'<br><span class="text-[11px] text-amber-600">Incomplete data</span>':""}</td>`+
       `<td class="px-2 py-1.5">${sid}</td>`+
       `<td class="px-2 py-1.5 text-slate-500 text-xs whitespace-nowrap" title="${esc(a.status_detail||'')}">${a.age!=null?"ago "+fmtDuration(a.age):"–"}</td>`+
@@ -484,6 +485,8 @@ def _agents_state(cfg: dict) -> list[dict]:
     """Pinned daemons (OpenClaw/Hermes…) first, then running tmux agents, with config display
     overrides (tag → label, vendor → tag colour) applied."""
     overrides = {a["name"]: a for a in cfg.get("agents", []) if a.get("name")}
+    from .identity import restart_warnings
+    warnings = restart_warnings(cfg)
     # Sessions listed in `hidden_sessions` are owned by a dedicated module (e.g. the sandbox
     # agents block) and must not also appear in this auto-discovered list, where they get a wrong
     # model tag. Each entry is an exact session name or a `prefix*` glob (reported 2026-09-15).
@@ -499,6 +502,8 @@ def _agents_state(cfg: dict) -> list[dict]:
             if a["alive"] and not _hidden(a["name"])]
     for a in tmux:
         ov = overrides.get(a["name"], {})
+        if a['name'] in warnings:
+            a['restart_warning'] = warnings[a['name']]
         if ov.get("tag"):
             a["label"] = ov["tag"]
         if ov.get("vendor"):
@@ -576,12 +581,15 @@ def _agent_action(name: str, action: str) -> tuple[bool, str]:
             pins = identity.pin_sessions(cfg, live)
             agent = identity.safe_restart(agent, live, pins)
             if agent is None:
-                return False, 'Restart blocked: exact conversation identity is unavailable.'
+                return False, 'Restart blocked: configure a safe fresh_start command.'
         # Re-enable (in case it was stopped) and relaunch fresh so it picks up new config (e.g. MCP).
         _set_enabled(name, True)
         if agent:
+            identity.record_restart(agent)
+            if agent.get('restart_warning'):
+                keepalive._log(f"agent '{name}': WARNING: {agent['restart_warning']}")
             keepalive._start(agent, tmux_bin, recreate=True)   # kill session + recreate + resume cmd
-            return True, f"restarting {name}"
+            return True, agent.get('restart_warning') or f"restarting {name}"
         from . import managed
         return managed.action(daemon, 'restart')
     if action == "stop":

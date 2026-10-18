@@ -4,7 +4,8 @@
 
 - Bind conversation IDs to explicit resume arguments, process-held files or
   unambiguous session creation times. Shared working directories no longer select
-  the newest conversation; uncertain identities block automatic resume.
+  the newest conversation; uncertain identities recover fresh with a visible
+  warning instead of resuming another agent's history or staying dead.
 - Pin newly created sessions for exact resume. Keep stable CLI menu numbers,
   discover common user-bin installations, confirm the selected agent and reject
   duplicate configured names, including stopped agents.
@@ -17,6 +18,8 @@
 - Warn that HTTP Basic Auth needs encrypted transport outside localhost.
 - Refresh checked-hash bytecode on installer re-runs before any package import,
   including `--no-setup --no-pip`, so same-second upgrades report the new version.
+- Decline the known optional fullscreen-renderer dialog with its full descriptive
+  text and preceding session output; never dismiss login/trust/permission dialogs.
 
 ## 0.3.1 (2026-10-18)
 

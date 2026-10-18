@@ -26,9 +26,13 @@ def run() -> int:
     print(f"  daemons: {len(cfg.get('daemons', []))} watched")
     live = [a for a in detect.discover_agents(config.agent_matches(cfg)) if a["alive"]]
     print(f"  live now: {len(live)} agent(s) running in tmux")
+    from . import identity
+    warnings = identity.restart_warnings(cfg)
     for a in cfg.get("agents", []):
-        if a.get("enabled", True) and not a.get("restart"):
+        if a.get("enabled", True) and not a.get("restart") and not identity.fresh_command(a):
             print(f"  ⚠️  '{a['name']}' has no restart command — it can't be revived if it dies.")
+        if a['name'] in warnings:
+            print(f"  Warning: {a['name']}: {warnings[a['name']]}")
     from . import managed
     for daemon in cfg.get('daemons', []):
         for warning in managed.warnings(daemon):

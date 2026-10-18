@@ -29,8 +29,8 @@ MATCH_KEYWORD = {"claude-code": "claude", "codex": "codex", "antigravity": "agy"
                  "aider": "aider", "gemini": "gemini"}
 
 #: For `agentsmon new` — create a brand-new agent. Per kind: the CLI binary to check, a human
-#: label and fresh launch command. Conversation-based agents only become restartable
-#: after an exact identity has been observed and pinned.
+#: label and fresh launch command. Exact pins resume history; unknown identities
+#: recover with a fresh conversation and a visible warning.
 AGENT_TYPES = [
     {"kind": "claude-code", "label": "Claude Code", "bin": "claude",
      "launch": "claude --dangerously-skip-permissions"},
@@ -518,6 +518,7 @@ def new() -> int:
     cfg.setdefault("agents", []).append({
         "name": name, "label": chosen["label"], "match": MATCH_KEYWORD[chosen["kind"]],
         "restart": '' if chosen['kind'] in detect.RESUME_TEMPLATES else launch.strip(),
+        'fresh_start':launch.strip(),
         'kind':chosen['kind'], 'identity_required':chosen['kind'] in detect.RESUME_TEMPLATES,
         "cwd": cwd, "enabled": True})
     config.save(cfg)

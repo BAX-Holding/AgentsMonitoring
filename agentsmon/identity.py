@@ -109,7 +109,7 @@ def resolve(rows, detect, now):
 
 
 def requires_pin(agent):
-    if agent.get('identity_required'):
+    if agent.get('identity_required') or agent.get('kind') in ('codex', 'claude-code', 'antigravity'):
         return True
     try:
         command = shlex.split(agent.get('restart') or '')
@@ -148,22 +148,106 @@ def pin_sessions(cfg, live):
     return pins
 
 
+def fresh_command(agent):
+    """Remove conversation selectors from a direct CLI invocation, preserving options.
+
+    Shell wrappers cannot be safely rewritten. Store their direct fresh invocation
+    in fresh_start instead. Quote all argv again so shell syntax stays inert.
+    """
+    from . import wizard
+    command = agent.get('fresh_start') or agent.get('restart')
+    if not command:
+        command = next((a['launch'] for a in wizard.AGENT_TYPES if a['kind']==agent.get('kind')), '')
+        binary, _, options = command.partition(' ')
+        if binary:
+            command = shlex.quote(wizard.find_cli(binary) or binary)+' '+options
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return None
+    if not words or Path(words[0]).name not in ('codex', 'claude', 'agy'):
+        return None
+    cli = Path(words[0]).name
+    selectors = {'resume', '--resume', '--conversation', '--session-id', '--fork-session', 'fork'}
+    flags = {'--continue', '--last', '--all', '--pick'}
+    if cli == 'claude':
+        selectors.add('-r')
+        flags.add('-c')
+    result = [words[0]]
+    i = 1
+    while i < len(words):
+        word = words[i]
+        key = word.partition('=')[0]
+        if word in {'--model', '-m', '--effort', '--profile', '--config'} or (cli=='codex' and word in {'-c','-p'}):
+            result.extend(words[i:i+2])
+            i += 2
+            continue
+        if key in selectors:
+            if '=' not in word and i+1 < len(words) and not words[i+1].startswith('-'):
+                i += 1
+        elif key not in flags:
+            result.append(word)
+        i += 1
+    return shlex.join(result)
+
+
 def safe_restart(agent, live=None, pins=None):
-    """Preserve explicit user options; never substitute a directory-wide --continue."""
-    from . import config, detect
+    """Resume proven ownership, otherwise start fresh with a visible warning."""
+    from . import config, detect, wizard
     if not requires_pin(agent):
         return agent if agent.get('restart') else None
     row = next((r for r in live or [] if r['name'] == agent['name'] and r.get('alive')), None)
-    if row and not row.get('resume_cmd'):
-        return None
     pin = (pins or {}).get(agent['name'], {})
     if pin.get('cwd') != agent.get('cwd') or pin.get('config') != str(config.DEFAULT_PATH.absolute()):
         pin = {}
-    sid = row.get('session_id') if row else pin.get('id')
+    sid = row.get('session_id') if row and row.get('resume_cmd') and not row.get('identity_conflict') else (
+        pin.get('id') if not row else None)
+    if not isinstance(sid, str) or not detect.UUID_RE.fullmatch(sid) or any(
+            r['name'] != agent['name'] and r.get('alive') and r.get('session_id') == sid for r in live or []):
+        sid = None
     configured = agent.get('restart') or ''
     old = explicit_id(configured, detect.UUID_RE)
-    if old:
-        return {**agent, 'restart':configured.replace(old, sid or old)}
-    if pin.get('restart'):
-        return {**agent, 'restart':pin['restart']}
-    return None
+    if sid:
+        if old:
+            return {**agent, 'restart':configured.replace(old, sid)}
+        if agent.get('fresh_start') or configured:
+            fresh = fresh_command(agent)
+            if fresh:
+                cli = Path(shlex.split(fresh)[0]).name
+                selector = {'codex':'resume', 'claude':'--resume', 'agy':'--conversation'}[cli]
+                return {**agent, 'restart':fresh+' '+selector+' '+sid}
+        if pin.get('restart') and explicit_id(pin['restart'], detect.UUID_RE) == sid:
+            return {**agent, 'restart':pin['restart']}
+        if row:
+            return {**agent, 'restart':wizard._auto_restart(row)}
+    fresh = fresh_command(agent)
+    return {**agent, 'restart':fresh,
+            'restart_warning':'Fresh conversation started: previous identity could not be verified; history was not resumed.'} if fresh else None
+
+
+def record_restart(agent):
+    """Persist recovery notices across supervisor/dashboard processes."""
+    from . import config, wizard
+    path = config.state_dir()/'restart-notices.json'
+    try:
+        notices = json.loads(path.read_text())
+    except (OSError, ValueError):
+        notices = {}
+    if agent.get('restart_warning'):
+        notices[agent['name']] = {'config':str(config.DEFAULT_PATH.absolute()), 'cwd':agent.get('cwd'),
+                                 'warning':agent['restart_warning'], 'time':datetime.now().isoformat()}
+    else:
+        notices.pop(agent['name'], None)
+    if not wizard._write_json(path, notices):
+        raise OSError('Could not preserve the restart notice')
+
+
+def restart_warnings(cfg):
+    from . import config
+    try:
+        notices = json.loads((config.state_dir()/'restart-notices.json').read_text())
+    except (OSError, ValueError):
+        return {}
+    return {a['name']:n['warning'] for a in cfg.get('agents', [])
+            if isinstance(n := notices.get(a['name']), dict) and n.get('warning')
+            and n.get('cwd') == a.get('cwd') and n.get('config') == str(config.DEFAULT_PATH.absolute())}

@@ -150,8 +150,11 @@ def tick(cfg: dict) -> int:
         recreate = exists and n >= 2
         safe = identity.safe_restart(a, live, pins)
         if safe is None:
-            _log(f"agent '{name}': restart blocked – exact conversation identity is unavailable")
+            _log(f"agent '{name}': restart blocked – configure a safe fresh_start command")
             continue
+        identity.record_restart(safe)
+        if safe.get('restart_warning'):
+            _log(f"agent '{name}': WARNING: {safe['restart_warning']}")
         _log(f"agent '{name}' {'dead in session' if exists else 'session missing'} → "
              f"{'recreating session' if recreate else 'restarting'} (attempt {n})")
         _start(safe, tmux_bin, recreate=recreate)

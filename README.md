@@ -39,9 +39,18 @@ Agents sharing a directory must have independent conversation IDs. Detection use
 explicit resume arguments, a transcript/presence file held by the process, or an
 unambiguous creation timestamp during a fresh process's first minute. It never
 chooses the newest conversation solely because the working directory matches.
-An uncertain ID remains blank and automatic resume is blocked with a diagnostic.
-New agents are pinned in the local state directory once their identity is proven.
-Resume explicitly in tmux if an older session cannot be identified safely.
+An uncertain ID remains blank. After a crash, an agent without proven ownership
+starts a **fresh conversation**, removing resume/continue selectors from its
+configured CLI command. A persistent amber dashboard notice and keepalive log
+warn that history was not resumed. Once identity is proven, a local pin enables
+exact resume; another live agent's ID is never reused. Original histories stay on
+disk. A later verified restart clears the notice.
+
+`new` saves the full fresh launch command, including its absolute CLI path. For
+custom shell wrappers, configure `fresh_start` with a direct CLI invocation:
+arbitrary shell scripts cannot be safely rewritten. Only the exact optional Claude
+fullscreen experiment is declined automatically; permission/login/trust prompts
+remain untouched.
 
 `agentsmon new` always lists the same agent types in the same order. Missing CLIs
 are marked, invalid input is retried, and the final choice must be confirmed.
@@ -337,8 +346,10 @@ hash (`dashboard.auth.pwhash`), never in plaintext. Remove the `auth` block to t
   the **Uptime** metric (default 3); isolated transient blips don't reset uptime (SLA still
   counts them).
 - **agents[].match** — a substring of the agent's process command line that means "alive".
-- **agents[].restart** — shell command run in the session to relaunch the agent (empty = just
-  recreate the tmux session). Without it, a dead agent can be detected but not revived.
+- **agents[].restart** — command used to relaunch an agent. Conversation-based CLIs
+  resume only a verified identity; otherwise they start fresh with a warning.
+- **agents[].fresh_start** — direct CLI launch for recovery without known identity,
+  saved automatically by `new`; keeps CLI path and options after a pre-first-turn crash.
 - **daemons[].restart** — optional command to run when the daemon is down.
 - **dashboard.host** — keep `127.0.0.1` for local-only; set a VPN/LAN address to reach it
   remotely. Non-loopback binds require HTTP authentication; also restrict access

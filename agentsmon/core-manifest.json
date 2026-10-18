@@ -1,18 +1,18 @@
 {
-  "content_id": "3f58900771e5ebce28735ecb65535cf20f1693e6b8d655e0143e7656787c0231",
+  "content_id": "7ed11205749d603431e22cb230abb3a2803c8b65204498672cfd919922dec7cd",
   "files": {
     "__init__.py": "9d6817bff387bb9598b13ffeb26aba934d81ce3a052fff61d30c0697d1e190a4",
     "__main__.py": "86128fddb3e1006ee0d06ed246db64068825a0502842bfae2612d8d464d70f6f",
     "bridges.py": "0bc78bbf17da5d937e93da160e6e19e8e28fa8ce376221d3f65c9bcca6a89706",
     "config.py": "b82b76175ddade997edec84b44b8fe14e50f8f503c5f173447419469fbd421a6",
-    "dashboard.py": "8c1cf15720ef7754b7f6ef82300787424b801841b3302e13b52736f0c702867a",
+    "dashboard.py": "9e71201a3910dd2eb02babfba1b507c11bdf16ec4c3b1ff6e8f1e30f0ec119f8",
     "db.py": "470bafc161d24ac1bea302af0873ebf2e596a8ce77796cb29e79189bb2d1c5cf",
     "detect.py": "9152202e8aa31af1ac5e3990f4ded35aececcd7a7433b112dc2cd9f613b2f5d0",
-    "dialogs.py": "6a32b19f38c2ff1979b0cd569343e6f4583a5359713ca293f8d2fd76b2153806",
-    "doctor.py": "0993246de0be74806e30df8c4e483ed0f78114bfae892a2f2f66e40ac021bda2",
-    "identity.py": "99833c8d24ed33e23ed2bb8e7873b2e6f6d937f41435caddd74b5065d1716157",
+    "dialogs.py": "690cf9a5fb439809329a8054d74de32cca192b67d6e931926762f345812b2b66",
+    "doctor.py": "b91ff6caabe4fe9a967e46ff0eed1ad0162b99c94d402bd5dcefa82745bb2818",
+    "identity.py": "5a99b846ae4d89dc701160da3108450d2f5d16f284c5e829a77e07d6b5cf5130",
     "integrity.py": "d844957010427fce6141365dc00e3dacaa45182e448c7177ae9ed4bc5d7a341b",
-    "keepalive.py": "4afe48297bb89d86bfd8a187006ae64986d2256b8fc34c1df6b7058ea98ba0c4",
+    "keepalive.py": "f06616f4b43ebf272c707ad319db034aa89ccefdd8db17b2e62f23aa7a22e21d",
     "managed.py": "f5e07722e9083fbcd2ea2f2fc2cc5aa6b6d556f8ed8c596e757a308df092eef3",
     "plugin_worker.py": "407c3054cfba3429b5f1c7cf28413d12a6b6a12eb0f49de9d23135c2daf4dedb",
     "plugins.py": "68815d1560a82716caa1b651f5c6d2066ebc6e2a593bedc58d0dc2c80f3f2222",
@@ -23,7 +23,7 @@
     "uninstaller.py": "c149b57897c91322abcfbf3a41e47b1fd37127212f0f6f9de5f9813af14a5b26",
     "updater.py": "e5f307f0d5eaac5f29359b90ddd7b0e183906b66df65f9c4c494a0c2220b34f2",
     "usage_plugin.py": "d30e2fd2ff35c486cabed7dc7913028fffddee4ab9a8cb9c9c3ecee83ca5c72a",
-    "wizard.py": "636cdec1e7d70abd865699cbff9f2d9425121c0140a398909a8dff2d678675a5"
+    "wizard.py": "6937fa3dca80f6376e752ae07cd49232e5ef0b1c562e04bc295baa5f0bb64eba"
   },
   "release": "v0.3.2-candidate",
   "version": "0.3.2"

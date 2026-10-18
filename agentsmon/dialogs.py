@@ -6,10 +6,23 @@ from . import detect
 
 def optional_renderer_dialog(text):
     clean = re.sub(r'\x1b\[[0-9;?]*[A-Za-z]', '', text)
-    lines = [line.strip().lstrip('>❯ ').strip() for line in clean.splitlines() if line.strip()]
-    allowed = {'Try the new fullscreen renderer?', '1. Yes', '2. Not now',
-               'Enter to confirm · Esc to cancel', 'Enter to confirm · Escape to cancel'}
-    return (set(lines) <= allowed and {'Try the new fullscreen renderer?', '1. Yes', '2. Not now'} <= set(lines))
+    # Anchor the known modal at the bottom; earlier session output is expected.
+    # Do not strip Markdown quote markers, or quoted instructions become UI.
+    lines = [line.strip().removeprefix('❯').strip() for line in clean.splitlines() if line.strip()][-15:]
+    title = 'Try the new fullscreen renderer?'
+    if title not in lines:
+        return False
+    start = len(lines)-1-lines[::-1].index(title)
+    if start and (lines[start-1].endswith(':') or lines[start-1].startswith(('>', '```'))):
+        return False
+    block = lines[start:]
+    footers = {'Enter to confirm · Esc to cancel', 'Enter to confirm · Escape to cancel'}
+    allowed = {title, '1. Yes', '1. Yes, try it', '2. Not now', *footers,
+               '· Flicker-free output — fixes the flashing you see during long responses',
+               '· Mouse support — click to move your cursor or expand results',
+               '· Selected text auto-copies to your clipboard'}
+    return (block[-1] in footers and set(block) <= allowed
+            and '2. Not now' in block and bool({'1. Yes', '1. Yes, try it'} & set(block)))
 
 
 def dismiss_optional_renderer(name):

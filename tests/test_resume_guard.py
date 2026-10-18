@@ -20,10 +20,12 @@ class ResumeGuard(unittest.TestCase):
             # An unresolved live process must invalidate its old pin.
             live[0].update(session_id=None, resume_cmd=None)
             pins = identity.pin_sessions({'agents':[agent]}, live)
-            self.assertIsNone(identity.safe_restart(agent, live, pins))
+            safe = identity.safe_restart(agent, live, pins)
+            self.assertNotIn(self.SID, safe['restart'])
+            self.assertTrue(safe['restart_warning'])
             self.assertEqual(pins, {})
 
-    def test_ambiguous_dashboard_restart_does_not_kill_or_enable(self):
+    def test_ambiguous_dashboard_restart_starts_fresh_with_warning(self):
         agent = {'name':'Writer','kind':'codex','cwd':'/work','restart':'codex --continue'}
         cfg = {'agents':[agent]}
         with tempfile.TemporaryDirectory() as d, patch.object(config,'state_dir',return_value=Path(d)), \
@@ -33,10 +35,10 @@ class ResumeGuard(unittest.TestCase):
              patch.object(dashboard,'_set_enabled') as enabled, \
              patch.object(keepalive,'_start') as start:
             ok, message = dashboard._agent_action('Writer','restart')
-        self.assertFalse(ok)
-        self.assertIn('identity', message)
-        enabled.assert_not_called()
-        start.assert_not_called()
+        self.assertTrue(ok)
+        self.assertIn('Fresh', message)
+        enabled.assert_called_once_with('Writer', True)
+        self.assertNotIn('--continue', start.call_args.args[0]['restart'])
 
     def test_configured_resume_options_are_preserved(self):
         old = '22222222-2222-4222-8222-222222222222'
