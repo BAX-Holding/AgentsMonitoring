@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -9,6 +10,50 @@ from agentsmon import config, dashboard
 
 
 class ManagedDaemons(unittest.TestCase):
+    def setUp(self):
+        bus = patch.object(Path, 'exists', return_value=True)
+        bus.start()
+        self.addCleanup(bus.stop)
+
+    def test_installed_user_unit_retains_owner_before_first_user_bus(self):
+        from agentsmon import managed
+        with tempfile.TemporaryDirectory() as tmp, patch.object(Path, 'home', return_value=Path(tmp)), \
+             patch.object(managed.sys, 'platform', 'linux'), patch.object(managed, 'properties', return_value={}), \
+             patch.object(managed, 'process_ids', return_value=[]):
+            unit = Path(tmp)/'.config/systemd/user/example.service'
+            unit.parent.mkdir(parents=True)
+            unit.write_text('[Service]\nExecStart=/usr/bin/true\n')
+            self.assertEqual(managed.discover({'unit_hint':'example.service'}),
+                             {'type':'systemd','unit':'example.service'})
+            self.assertIsNone(managed.discover({'unit_hint':'missing.service'}))
+
+    def test_first_su_bootstraps_bus_via_linger_before_enabling_unit(self):
+        from agentsmon import managed
+        calls = []
+        def run(argv):
+            calls.append(argv)
+            return subprocess.CompletedProcess(argv, 0, '', '')
+        with patch.object(managed, 'run', side_effect=run), \
+             patch.object(managed, 'properties', return_value={}), \
+             patch.object(Path, 'exists', side_effect=[False, True]), patch.object(managed.time, 'sleep'):
+            ok, notes = managed.activate({'type':'systemd','unit':'example.service'})
+        self.assertTrue(ok, notes)
+        self.assertEqual(calls[0][:2], ['loginctl','enable-linger'])
+        self.assertIn(['systemctl','--user','daemon-reload'], calls)
+        self.assertIn(['systemctl','--user','enable','--now','example.service'], calls)
+        self.assertTrue(any('user bus' in note for note in notes))
+
+    def test_missing_bus_never_claims_success_when_bootstrap_is_denied_or_stalls(self):
+        from agentsmon import managed
+        for rc in (1, 0):
+            with self.subTest(rc=rc), patch.object(Path, 'exists', return_value=False), \
+                 patch.object(managed.time, 'sleep'), patch.object(managed, 'run',
+                 return_value=subprocess.CompletedProcess([], rc, '', '')) as run:
+                ok, notes = managed.activate({'type':'systemd','unit':'example.service'})
+                self.assertFalse(ok)
+                self.assertTrue(notes)
+                self.assertEqual(run.call_count, 1)
+
     def action(self, owner, action, running_after):
         calls = []
         def run(argv, **kwargs):

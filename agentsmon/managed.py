@@ -60,8 +60,12 @@ def discover(spec):
         return spec['manager']
     if sys.platform.startswith('linux'):
         hint = spec.get('unit_hint')
-        if hint and properties(hint).get('LoadState') == 'loaded':
-            return {'type':'systemd','unit':hint}
+        if hint and re.fullmatch(r'[A-Za-z0-9_.@:\\-]+\.service', hint):
+            # A first `su - user` may have no user bus yet. Preserve the
+            # installed unit's ownership rather than launching a duplicate.
+            installed = Path.home()/'.config/systemd/user'/hint
+            if properties(hint).get('LoadState') == 'loaded' or installed.is_file():
+                return {'type':'systemd','unit':hint}
         owners = set()
         for pid in process_ids(spec):
             try:
@@ -118,11 +122,33 @@ def activate(owner):
     if owner.get('type') != 'systemd':
         return True, []
     unit = owner['unit']
+    user = pwd.getpwuid(os.getuid()).pw_name
+    notes = []
+    bootstrapped = False
+    bus = Path(f'/run/user/{os.getuid()}/bus')
+    if not bus.exists():
+        # loginctl uses the system bus and can start our user manager before
+        # systemctl --user is usable. No sudo or another user's bus involved.
+        r = run(['loginctl','enable-linger',user])
+        if not r or r.returncode != 0:
+            return False, ['User bus unavailable; an administrator must run: loginctl enable-linger '+shlex.quote(user)]
+        for attempt in range(20):
+            if bus.exists():
+                break
+            time.sleep(0.25)
+        else:
+            return False, ['Lingering enabled, but the user bus did not start; retry agentsmon add.']
+        r = run(['systemctl','--user','daemon-reload'])
+        if not r or r.returncode != 0:
+            return False, ['User bus started, but unit reload failed; retry agentsmon add.']
+        bootstrapped = True
+        notes.append(f'Started the user bus and enabled lingering for {user}.')
     r = run(['systemctl','--user','enable','--now',unit])
     if not r or r.returncode != 0:
         return False, [f'Could not enable/start {unit}; check the user systemd bus and unit.']
-    notes = [f'Enabled and started user unit {unit}.']
-    user = pwd.getpwuid(os.getuid()).pw_name
+    notes.append(f'Enabled and started user unit {unit}.')
+    if bootstrapped:
+        return True, notes
     r = run(['loginctl','enable-linger',user])
     if not r or r.returncode != 0:
         notes.append('Boot persistence needs an administrator to run: loginctl enable-linger '+shlex.quote(user))

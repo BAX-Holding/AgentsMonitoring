@@ -463,7 +463,11 @@ def open_files(pids: list) -> list[str]:
     for pid in pids or []:
         fd = Path("/proc") / str(pid) / "fd"
         if fd.is_dir():
-            for link in fd.iterdir():
+            try:
+                links = list(fd.iterdir())
+            except OSError:
+                continue  # Exited/non-dumpable child during boot; identity stays unknown.
+            for link in links:
                 try:
                     out.append(os.path.realpath(link))
                 except OSError:
@@ -752,7 +756,41 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
             "resume_cmd": resume, "pids": row['pids'],
             "identity_conflict": row.get('identity_conflict', False),
         })
+        if kind in ('codex', 'claude-code'):
+            pane = _run([_tmux_bin(), 'capture-pane', '-p', '-t', row['name']])
+            if pane and pane.returncode == 0 and login_screen(kind, pane.stdout):
+                agents[-1].update(needs_login=True, status='Needs login')
     return agents
+
+
+def login_screen(kind: str, text: str) -> bool:
+    """Recognize current login UI only; never inspect a shared credential store."""
+    clean = re.sub(r'\x1b\[[0-9;?]*[A-Za-z]', '', text)
+    lines = [line.strip().lstrip('›❯').strip() for line in clean.splitlines() if line.strip()][-18:]
+    if kind == 'codex':
+        return (any(re.fullmatch(r'>?\s*1\. Sign in with ChatGPT', line) for line in lines)
+                and '2. Sign in with Device Code' in lines
+                and any('API key' in line and line.startswith('3.') for line in lines))
+    if kind == 'claude-code':
+        return any(re.fullmatch(r'(?:⎿\s*|⏵⏵ bypass permissions on \(shift\+tab to cycle\)\s+)?'
+                                r'Not logged in\s*[·.]\s*(?:Please run|Run) /login',
+                                line, re.I) for line in lines[-6:])
+    return False
+
+
+def configured_agents(cfg: dict) -> list[dict]:
+    """Include configured agents even after their tmux session was stopped."""
+    from . import config
+    rows = discover_agents(config.agent_matches(cfg))
+    names = {r['name'] for r in rows}
+    for entry in cfg.get('agents', []):
+        if entry['name'] not in names:
+            rows.append({'name':entry['name'], 'kind':entry.get('kind', 'custom-match'),
+                         'label':entry.get('label') or entry.get('kind', 'Agent'),
+                         'session_id':None, 'resume_cmd':None, 'pids':[], 'age':None,
+                         'alive':False, 'vendor':vendor_for_agent(entry.get('kind', ''), ''),
+                         'status':'Stopped (manual)' if not entry.get('enabled', True) else 'Not running'})
+    return rows
 
 
 def _tokens_under_telegram(obj, in_tg: bool = False) -> list[str]:

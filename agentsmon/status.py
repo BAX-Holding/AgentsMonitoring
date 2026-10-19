@@ -19,15 +19,16 @@ def _fmt_age(sec) -> str:
 
 def render(cfg: dict | None = None) -> str:
     cfg = cfg or config.load()
-    agents = detect.discover_agents(config.agent_matches(cfg))
+    agents = detect.configured_agents(cfg)
     daemons = detect.daemon_status(cfg.get("daemons", []))
     lines = ["", "  AGENTS (tmux)"]
     if not agents:
         lines.append("    (no tmux sessions found — is tmux running?)")
     for a in agents:
-        dot = "🟢" if a["alive"] else "⚪"
+        dot = "🟡" if a.get('needs_login') else ("🟢" if a["alive"] else "⚪")
         sid = f"  [{a['session_id'][:8]}]" if a.get("session_id") else ""
-        lines.append(f"    {dot} {a['name']:<28} {a['label']:<14} age {_fmt_age(a['age'])}{sid}")
+        state = f"  {a['status']}" if a.get('status') else ''
+        lines.append(f"    {dot} {a['name']:<28} {a['label']:<14} age {_fmt_age(a['age'])}{sid}{state}")
     if daemons:
         lines += ["", "  DAEMONS"]
         for d in daemons:

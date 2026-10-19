@@ -1,30 +1,30 @@
 {
-  "content_id": "526a5142a895839c14e1927337c8c74240c2868b705b0b7409db476e9f3c1454",
+  "content_id": "a204b94a03e81a4ab18f0218f054eac98c169a1e54f69c409fca9db81c8fb5f1",
   "files": {
-    "__init__.py": "5ab5ae50f73560ef26d098db9f67427f61cdcbcb82995ef381256a1d560ee3b5",
+    "__init__.py": "5edb04bd99a8a22478e5b6c92278abdb8c7e87a0241d4e6a9cee1c3b0bd18739",
     "__main__.py": "86128fddb3e1006ee0d06ed246db64068825a0502842bfae2612d8d464d70f6f",
     "bridges.py": "0bc78bbf17da5d937e93da160e6e19e8e28fa8ce376221d3f65c9bcca6a89706",
     "config.py": "b82b76175ddade997edec84b44b8fe14e50f8f503c5f173447419469fbd421a6",
-    "dashboard.py": "9e71201a3910dd2eb02babfba1b507c11bdf16ec4c3b1ff6e8f1e30f0ec119f8",
+    "dashboard.py": "2d2f454454f91f9e2b17e375df43c3fc419656ed27dcf2c9e55e285b049c6c89",
     "db.py": "470bafc161d24ac1bea302af0873ebf2e596a8ce77796cb29e79189bb2d1c5cf",
-    "detect.py": "5b37809bd98452d6acc4e3093fc8c6224289d9641aadfff4fa6603604e6ba10a",
+    "detect.py": "5f44ac3331a54df99b1e58728d6503fa694207a0cd44da8e63fa50f25f619c78",
     "dialogs.py": "690cf9a5fb439809329a8054d74de32cca192b67d6e931926762f345812b2b66",
     "doctor.py": "b91ff6caabe4fe9a967e46ff0eed1ad0162b99c94d402bd5dcefa82745bb2818",
     "identity.py": "933d4f6035a33f5c415327db2c3580abdd59049ce529dad24efef5dac87914f5",
     "integrity.py": "d844957010427fce6141365dc00e3dacaa45182e448c7177ae9ed4bc5d7a341b",
     "keepalive.py": "f06616f4b43ebf272c707ad319db034aa89ccefdd8db17b2e62f23aa7a22e21d",
-    "managed.py": "f5e07722e9083fbcd2ea2f2fc2cc5aa6b6d556f8ed8c596e757a308df092eef3",
+    "managed.py": "10da1bd690d61ceb68a571c51aefff1d10b49126026a9b3c13c515ad995ceaeb",
     "plugin_worker.py": "407c3054cfba3429b5f1c7cf28413d12a6b6a12eb0f49de9d23135c2daf4dedb",
     "plugins.py": "68815d1560a82716caa1b651f5c6d2066ebc6e2a593bedc58d0dc2c80f3f2222",
-    "probe.py": "c87a7607d52166ce5c439a81a2abe6028a4441bb03578fe1c6701102fcb8c760",
+    "probe.py": "3e2357a2c7b9eb0745e7bac5849c937509570778e2cbd5c6fcb6931977059542",
     "service.py": "8a0145501b5596586633e91b3479d20b3f45aa54f75e0fef858ab5df08d7f70a",
     "static/tailwind.js": "176e894661aa9cdc9a5cba6c720044cbbf7b8bd80d1c9a142a7c24b1b6c50d15",
-    "status.py": "93ec57cb9be2d6234cbaaf421844bb00a80a8d2883a8633225ab27a7410d5d85",
+    "status.py": "03f98847add6fad24e51760f68bccf38c0f2bebb58fe541122e3d2b83d94d2da",
     "uninstaller.py": "c149b57897c91322abcfbf3a41e47b1fd37127212f0f6f9de5f9813af14a5b26",
     "updater.py": "e5f307f0d5eaac5f29359b90ddd7b0e183906b66df65f9c4c494a0c2220b34f2",
     "usage_plugin.py": "d30e2fd2ff35c486cabed7dc7913028fffddee4ab9a8cb9c9c3ecee83ca5c72a",
-    "wizard.py": "6937fa3dca80f6376e752ae07cd49232e5ef0b1c562e04bc295baa5f0bb64eba"
+    "wizard.py": "d7e63a157b18f69ee0d0ec00a7fd9e97e25fa99f452d3b0f624fb17131fa246e"
   },
-  "release": "v0.3.3-candidate",
-  "version": "0.3.3"
+  "release": "v0.3.4",
+  "version": "0.3.4"
 }

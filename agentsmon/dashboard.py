@@ -251,7 +251,7 @@ function renderActions(a,table){
 function renderAgents(root, agents, summary=null, columns=[]){
   renderColumns(root, columns);
   const tb=q(root,".agent-rows");
-  const on=agents.some(a=>a.alive); const running=agents.filter(a=>a.alive).length;
+  const on=agents.some(a=>a.alive&&!a.needs_login); const running=agents.filter(a=>a.alive&&!a.needs_login).length;
   q(root,".svc-head").className="svc-head flex items-center gap-2.5 mb-3 rounded-lg border px-3 py-2 cursor-pointer "+(on?"bg-emerald-50 border-emerald-200":"bg-white border-slate-200");
   q(root,".svc-dot").className="svc-dot h-3 w-3 rounded-full shrink-0 "+(on?"bg-emerald-500":"bg-slate-300");
   const cnt=q(root,".agents-count");
@@ -281,12 +281,12 @@ function renderAgents(root, agents, summary=null, columns=[]){
     }else{
       sid=`<span class="text-xs text-slate-300 cursor-help" title="${esc(tip)}">— none</span>`;
     }
-    const ok=a.alive; const dot=ok?"bg-emerald-500":(a.plugin?"bg-rose-500":"bg-slate-300");
+    const ok=a.alive&&!a.needs_login; const dot=a.needs_login?"bg-amber-500":(ok?"bg-emerald-500":(a.plugin?"bg-rose-500":"bg-slate-300"));
     // Health is the visible status for every agent; latency is supplementary detail.
     const statusTxt=a.status||(ok?"Running":"Idle");
     const statusTip=[a.status_detail||a.status,
       ok&&a.latency_ms!=null?`latency ${fmtLat(a.latency_ms)}`:""].filter(Boolean).join(" · ");
-    const stCls=ok?"text-slate-600":"text-slate-400";
+    const stCls=a.needs_login?"text-amber-600":(ok?"text-slate-600":"text-slate-400");
     const tr=document.createElement("tr"); tr.className="border-b border-slate-100 last:border-0";
     const nameBg=NAME_BG[a.name_color];
     const nameInner=nameBg?`<span class="inline-block rounded px-1.5 py-0.5 ${nameBg}">${esc(a.name)}</span>`:esc(a.name);
@@ -498,8 +498,8 @@ def _agents_state(cfg: dict) -> list[dict]:
             if name == h:
                 return True
         return False
-    tmux = [a for a in detect.discover_agents(config.agent_matches(cfg))
-            if a["alive"] and not _hidden(a["name"])]
+    tmux = [a for a in detect.configured_agents(cfg)
+            if (a["alive"] or a['name'] in overrides) and not _hidden(a["name"])]
     for a in tmux:
         ov = overrides.get(a["name"], {})
         if a['name'] in warnings:

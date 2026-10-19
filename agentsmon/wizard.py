@@ -6,6 +6,7 @@ config, and installs the boot service. Designed to need almost no typing.
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 import shlex
@@ -121,6 +122,16 @@ def claude_is_logged_in(home: Path | None = None) -> bool:
     if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
         return True
     return ((home or Path.home()) / ".claude" / ".credentials.json").exists()
+
+
+def codex_is_logged_in(executable: str) -> bool:
+    """Check the selected CLI's credentials without printing or copying them."""
+    try:
+        result = subprocess.run([executable, 'login', 'status'], stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 def wait_for_tui(name: str, timeout: float = 25.0) -> bool:
@@ -389,7 +400,7 @@ def _scan_candidates(known: set) -> list:
     for d in COMMON_DAEMONS:
         from . import managed
         owner = managed.discover(d)
-        running = _running(d["pattern"])
+        running = (managed.active(owner) is True if owner else bool(managed.process_ids(d)))
         if (owner or running or find_cli(d.get("binary", ""))) and d["name"] not in known:
             out.append({"kind": "daemon", "obj": {**d, **({'manager':owner} if owner else {})},
                         "display": f"{d['name']}  (daemon{'' if running else ', not running'})"})
@@ -417,6 +428,8 @@ def add() -> int:
     candidates = _scan_candidates(known)
     from . import managed
     for current in cfg.get('daemons', []):
+        if not current.get('enabled', True):
+            continue  # An explicit stop is not a broken service installation.
         defaults = next((d for d in COMMON_DAEMONS if d['name'] == current.get('name')), {})
         owner = managed.discover({**defaults, **current})
         if owner and owner.get('type') == 'systemd':
@@ -527,7 +540,10 @@ def new() -> int:
     # Kick off a first turn so the agent registers its session id + model right away — a brand-new
     # session shows neither until its first message. Wait for the TUI to actually come up first;
     # a flat sleep sent the keys into a shell on a cold machine and nothing registered.
-    if not wait_for_tui(name):
+    if chosen['kind'] == 'codex' and not codex_is_logged_in(chosen['executable']):
+        print('  ! Codex is not logged in yet (or login status could not be verified).')
+        print(f'    Run tmux attach -t {shlex.quote(name)}, press Esc if needed and choose Sign in with Device Code.')
+    elif not wait_for_tui(name):
         print("  ! the agent TUI didn't come up in time — send it a first message yourself")
     else:
         if chosen['kind'] == 'claude-code':
@@ -547,6 +563,16 @@ def run() -> int:
         print("⚠️  tmux not found — agents run inside tmux, so install tmux first.")
     print("Scanning for agents and daemons…\n")
     candidates = _scan_candidates(set())   # everything (fresh setup)
+    previous = copy.deepcopy(config.load())
+    # Missing/stopped entries still belong to the user's configuration. Offer
+    # them without interpreting setup's default selection as permission to start.
+    seen = {c['obj']['name'] for c in candidates}
+    for key, kind in (('agents', 'agent'), ('daemons', 'daemon')):
+        for entry in previous.get(key, []):
+            if entry['name'] not in seen:
+                candidates.append({'kind':kind, 'obj':entry, 'existing':True,
+                                   'display':entry['name']+' (configured; keep current settings)'})
+                seen.add(entry['name'])
 
     chosen: set = set()
     if not candidates:
@@ -565,11 +591,13 @@ def run() -> int:
         if i not in chosen:
             continue
         if c["kind"] == "agent":
-            agents.append(_agent_entry(c["obj"]))
+            old = next((a for a in previous.get('agents', []) if a['name'] == c['obj']['name']), None)
+            agents.append(dict(old) if old is not None else _agent_entry(c['obj']))
         elif c['kind'] == 'bridge':
             bridge_entries.append(c['obj'])
         else:
-            daemons.append(c["obj"])
+            old = next((d for d in previous.get('daemons', []) if d['name'] == c['obj']['name']), {})
+            daemons.append({**c['obj'], **old})
     print(f"\n  → will monitor {len(agents)} agent(s) + {len(daemons)} daemon(s), with auto-restart.")
 
     # Dashboard reach: localhost always works; ask whether to also expose it on the machine's IP.
@@ -606,7 +634,10 @@ def run() -> int:
     cfg["services"] = [dict(SYSTEM_SERVICE)]
     for d in daemons:
         dmn, pin = _daemon_entries(d)
-        if dmn.get('manager'):
+        old_pin = next((p for p in previous.get('pinned_daemons', []) if p['name'] == d['name']), {})
+        pin.update(old_pin)
+        pin['enabled'] = dmn.get('enabled', True)
+        if dmn.get('manager') and dmn.get('enabled', True):
             from . import managed
             ok, notes = managed.activate(dmn['manager'])
             for note in notes:

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.4 (2026-10-19)
+
+- Check Codex login status before sending a first greeting; keep the device-code choice untouched on unsigned installations.
+- Preserve configured agents, custom daemon settings and explicit stops during setup reruns.
+- Detect wrapped gateways through their service owner or listener, including current Hermes launchers.
+- Keep stopped agents visible and mark recognized Codex/Claude login screens as needing login without restarting their live processes.
+- Bootstrap a missing user systemd bus through own-user lingering during explicit setup/add; keep installed-unit ownership under `su` and enable boot persistence.
+- Tolerate exited or non-inspectable process descriptors during boot without inventing conversation identity or crashing discovery.
+
 ## 0.3.3 (2026-10-18)
 
 - Restore conversation identity and the recorded model for a single Claude Code

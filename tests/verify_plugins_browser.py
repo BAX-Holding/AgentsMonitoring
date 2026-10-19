@@ -94,6 +94,20 @@ async def verify(args):
                 assert 'latency 1 ms' in await daemon_status.get_attribute('title')
                 assert 'Health endpoint OK' in await daemon_status.get_attribute('title')
                 assert await upper.locator('tbody tr').first.locator('td').nth(4).inner_text()=='Running'
+                # A live login gate must be yellow; liveness still prevents keeper restarts.
+                shared.update(needs_login=True, status='Needs login')
+                await page.evaluate('refresh()')
+                login = upper.locator('tbody tr').first.locator('td').nth(4)
+                assert await login.inner_text() == 'Needs login'
+                assert await login.locator('.bg-amber-500').count() == 1
+                assert await login.locator('.bg-emerald-500').count() == 0
+                await page.screenshot(path=str(args.out/'needs-login.png'), full_page=True)
+                shared.update(needs_login=False, alive=False, status='Stopped (manual)')
+                await page.evaluate('refresh()')
+                assert await login.inner_text() == 'Stopped (manual)'
+                assert 'Example Agent' in await upper.inner_text()
+                shared.update(alive=True, status='Running')
+                await page.evaluate('refresh()')
                 # Zero latency is still a valid observation; no observation invents no latency.
                 for latency,expected in ((0,'latency <1 ms'),(None,None)):
                     daemon['latency_ms']=latency

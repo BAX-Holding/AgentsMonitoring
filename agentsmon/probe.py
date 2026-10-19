@@ -135,7 +135,8 @@ def _system_health(cfg: dict) -> tuple[bool, float | None, str]:
     down: list[str] = []
     lats: dict[str, float] = {}
 
-    alive = {a["name"] for a in detect.discover_agents(_config.agent_matches(cfg)) if a.get("alive")}
+    alive = {a["name"] for a in detect.discover_agents(_config.agent_matches(cfg))
+             if a.get("alive") and not a.get('needs_login')}
     for a in cfg.get("agents", []):
         if a.get("enabled", True) and a.get("name") and a["name"] not in alive:
             down.append(a["name"])
