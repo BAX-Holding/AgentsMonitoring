@@ -114,8 +114,9 @@ def register(cfg, item):
     entries = cfg.setdefault('daemons', [])
     existing = next((d for d in entries if d.get('bridge_config') == item['bridge_config']), None)
     if existing:
-        # Preserve explicit stopped state and display overrides.
-        item = {**item, 'enabled':existing.get('enabled', True), 'name':existing['name']}
+        # Preserve explicit stopped state, display overrides, and restart ownership.
+        item = {**item, 'enabled':existing.get('enabled', True), 'name':existing['name'],
+                **({'restart':existing['restart']} if 'restart' in existing else {})}
         existing.update(item)
     else:
         entries.append(item)

@@ -52,6 +52,21 @@ class BridgeRegistration(unittest.TestCase):
             self.assertFalse(cfg['daemons'][0]['enabled'])
             self.assertEqual(cfg['custom'], 'preserve')
 
+    def test_repeat_registration_preserves_operator_restart(self):
+        cfg = {'daemons':[{'name':'Operator bridge one',
+                           'pattern':'old pattern',
+                           'bridge_config':'/tmp/one.json',
+                           'enabled':False,
+                           'restart':'OPERATOR-CONTROLLED-RESTART'}]}
+        item = bridges.entry('/tmp/one.json', '/venv/bin/python')
+
+        bridges.register(cfg, item)
+
+        daemon = cfg['daemons'][0]
+        self.assertFalse(daemon['enabled'])
+        self.assertEqual(daemon['name'], 'Operator bridge one')
+        self.assertEqual(daemon['restart'], 'OPERATOR-CONTROLLED-RESTART')
+
     def test_default_explicit_and_env_config_are_distinct(self):
         with tempfile.TemporaryDirectory() as d, patch.object(Path,'home',return_value=Path(d)), \
              patch.object(bridges,'process_env',return_value={}):

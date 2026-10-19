@@ -1,9 +1,9 @@
 {
-  "content_id": "526a5142a895839c14e1927337c8c74240c2868b705b0b7409db476e9f3c1454",
+  "content_id": "dae3c0b1ba8710511b5782e007b89fef72a64b762c0b7ab1e8f90a3eb4beee2b",
   "files": {
     "__init__.py": "5ab5ae50f73560ef26d098db9f67427f61cdcbcb82995ef381256a1d560ee3b5",
     "__main__.py": "86128fddb3e1006ee0d06ed246db64068825a0502842bfae2612d8d464d70f6f",
-    "bridges.py": "0bc78bbf17da5d937e93da160e6e19e8e28fa8ce376221d3f65c9bcca6a89706",
+    "bridges.py": "1bf7ba5365df3cb939a4589d6bc29f980347942fc210071dd0cb6314477c34bb",
     "config.py": "b82b76175ddade997edec84b44b8fe14e50f8f503c5f173447419469fbd421a6",
     "dashboard.py": "9e71201a3910dd2eb02babfba1b507c11bdf16ec4c3b1ff6e8f1e30f0ec119f8",
     "db.py": "470bafc161d24ac1bea302af0873ebf2e596a8ce77796cb29e79189bb2d1c5cf",
@@ -25,6 +25,6 @@
     "usage_plugin.py": "d30e2fd2ff35c486cabed7dc7913028fffddee4ab9a8cb9c9c3ecee83ca5c72a",
     "wizard.py": "6937fa3dca80f6376e752ae07cd49232e5ef0b1c562e04bc295baa5f0bb64eba"
   },
-  "release": "v0.3.3-candidate",
+  "release": "v0.3.3-restart-preservation-candidate",
   "version": "0.3.3"
 }
