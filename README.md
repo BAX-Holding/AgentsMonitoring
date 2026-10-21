@@ -171,7 +171,7 @@ The wizard scans tmux, lists the agents it found, lets you pick which to supervi
 restart command for each), optionally watches detected daemons, and installs the boot service.
 
 To **spin up a fresh agent**, run `agentsmon new`: it asks for a type (Claude Code / Codex /
-Antigravity / Aider / Gemini — whichever CLIs are installed) and a name, launches it in its own
+Antigravity — whichever CLIs are installed) and a name, launches it in its own
 tmux session, and registers it for keepalive + the dashboard in one step.
 
 ---
@@ -260,8 +260,8 @@ The normal interactive installer behavior is unchanged.
 ## How detection works
 
 Agents live in **tmux**, so for every session we walk the pane process tree and classify it by
-the command line: `claude` → Claude Code, `codex` → Codex (plus `aider`, `gemini` out of the
-box; add your own via the config `match` keyword). A session whose tree is only a login shell is
+the command line: `claude` → Claude Code, `codex` → Codex, `agy` → Antigravity (add your own via the
+config `match` keyword). A session whose tree is only a login shell is
 shown as **idle**. Background **daemons** aren't in tmux, so they're matched by a process pattern
 (`pgrep -f`) and an optional HTTP health URL.
 

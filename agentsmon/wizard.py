@@ -23,11 +23,8 @@ RESTART_DEFAULTS = {
     "claude-code": "claude --dangerously-skip-permissions --resume {id}",
     "codex": "codex --dangerously-bypass-approvals-and-sandbox resume {id}",
     "antigravity": "agy --conversation {id} --dangerously-skip-permissions",
-    "aider": "aider",
-    "gemini": "gemini",
 }
-MATCH_KEYWORD = {"claude-code": "claude", "codex": "codex", "antigravity": "agy",
-                 "aider": "aider", "gemini": "gemini"}
+MATCH_KEYWORD = {"claude-code": "claude", "codex": "codex", "antigravity": "agy"}
 
 #: For `agentsmon new` — create a brand-new agent. Per kind: the CLI binary to check, a human
 #: label and fresh launch command. Exact pins resume history; unknown identities
@@ -39,8 +36,6 @@ AGENT_TYPES = [
      "launch": "codex --dangerously-bypass-approvals-and-sandbox"},
     {"kind": "antigravity", "label": "Antigravity", "bin": "agy",
      "launch": "agy --dangerously-skip-permissions"},
-    {"kind": "aider", "label": "Aider", "bin": "aider", "launch": "aider", "restart": "aider"},
-    {"kind": "gemini", "label": "Gemini", "bin": "gemini", "launch": "gemini", "restart": "gemini"},
 ]
 
 

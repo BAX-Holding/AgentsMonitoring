@@ -39,3 +39,10 @@ class NewSelection(unittest.TestCase):
         self.assertTrue(wizard.name_taken('Writer', cfg, []))
         self.assertTrue(wizard.name_taken('Worker', cfg, []))
         self.assertFalse(wizard.name_taken('Other', cfg, []))
+
+
+class SupportedAgentTypes(unittest.TestCase):
+    def test_new_offers_only_supported_agent_clis(self):
+        from agentsmon import detect, wizard
+        self.assertEqual([a['kind'] for a in wizard.AGENT_TYPES], ['claude-code', 'codex', 'antigravity'])
+        self.assertEqual([k for k, _, _ in detect.KNOWN_AGENTS], ['claude-code', 'codex', 'antigravity'])

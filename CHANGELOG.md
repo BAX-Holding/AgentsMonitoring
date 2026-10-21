@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.5 (2026-10-21)
+
+- `agentsmon new` and agent detection now offer only Claude Code, Codex and Antigravity. Aider and Gemini CLI were removed (Antigravity is Google's current agent CLI). Use the config `match` keyword to monitor any other CLI.
+
 ## 0.3.4 (2026-10-19)
 
 - Check Codex login status before sending a first greeting; keep the device-code choice untouched on unsigned installations.
