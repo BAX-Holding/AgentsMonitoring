@@ -320,8 +320,11 @@ class AntigravityDecisionAndParsing(unittest.TestCase):
 
     def test_lsof_field_output_is_parsed(self):
         """`lsof -Fn` prints one field per line, names prefixed with n."""
+        import pathlib
         import types
-        orig_run, orig_which = detect._run, detect.shutil.which
+        orig_run, orig_which, orig_path = detect._run, detect.shutil.which, detect.Path
+        # On a Linux runner PID 755 can really exist, and its /proc entry would win over lsof.
+        detect.Path = lambda p: pathlib.Path("/nonexistent-proc" if p == "/proc" else p)
         detect.shutil.which = lambda x: "/usr/sbin/lsof"
         detect._run = lambda *a, **k: types.SimpleNamespace(
             returncode=0, stdout="p755\nfcwd\nn/Users/me\nftxt\nn" + self.LOCK + "\n", stderr="")
@@ -331,7 +334,7 @@ class AntigravityDecisionAndParsing(unittest.TestCase):
             self.assertIn("/Users/me", got)
             self.assertNotIn("p755", got)
         finally:
-            detect._run, detect.shutil.which = orig_run, orig_which
+            detect._run, detect.shutil.which, detect.Path = orig_run, orig_which, orig_path
 
 
 class DiscoverAgentsWiring(unittest.TestCase):
@@ -407,3 +410,15 @@ class AntigravityModel(unittest.TestCase):
                                                   "Antigravity"), "Gemini 3 Flash")
         self.assertEqual(detect.antigravity_label(None, None, ["agy"], "Antigravity"),
                          "Antigravity")
+
+
+class AttachHintsAreQuoted(unittest.TestCase):
+    """Session names contain spaces ("T - Claude"); an unquoted hint fails when pasted."""
+
+    def test_every_attach_hint_quotes_the_session_name(self):
+        import re
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "agentsmon", "wizard.py"), encoding="utf-8").read()
+        hints = re.findall(r"tmux attach -t \{([^}]*)\}", src)
+        self.assertTrue(hints)
+        for expr in hints:
+            self.assertTrue(expr.startswith("shlex.quote("), expr)

@@ -1,7 +1,7 @@
 {
-  "content_id": "0dff9d7eebad0c4c544a363ecbc31b27f570e6b96bcc07677c177e7fc6c1ee66",
+  "content_id": "1ae721c3cf99abbb05e6fac67b9a1df5d08e5eca70b7371d7fee893617594180",
   "files": {
-    "__init__.py": "6e87309d09222e595998382b9586fdd050689c9980f1b34bbf21805d3903edc6",
+    "__init__.py": "5d34cfa5ece2de941a159c2020100da724d4a43b22abfc822d540620059ab2b3",
     "__main__.py": "5141a43a820decea25d52515be4f2567b992176a81008b1b6532cedbbe574808",
     "bridges.py": "9525ab9ad7c86f9d0e06ee44c1ee9558ab88331c088a21361fbcc1e86f815540",
     "config.py": "b82b76175ddade997edec84b44b8fe14e50f8f503c5f173447419469fbd421a6",
@@ -24,8 +24,8 @@
     "uninstaller.py": "c149b57897c91322abcfbf3a41e47b1fd37127212f0f6f9de5f9813af14a5b26",
     "updater.py": "e5f307f0d5eaac5f29359b90ddd7b0e183906b66df65f9c4c494a0c2220b34f2",
     "usage_plugin.py": "d30e2fd2ff35c486cabed7dc7913028fffddee4ab9a8cb9c9c3ecee83ca5c72a",
-    "wizard.py": "305b9003951bfcf84fa00fe0e7c20e412ca4780408e86852af19cc433ab77560"
+    "wizard.py": "558b0f1a3699e87d7cafd48abd8ca3eeeb198cb4a7d9ccb0ae054d84dc1d86fe"
   },
-  "release": "v0.3.11",
-  "version": "0.3.11"
+  "release": "v0.3.12",
+  "version": "0.3.12"
 }

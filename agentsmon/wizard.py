@@ -541,7 +541,7 @@ def new() -> int:
             print(f"  ✓ pre-answered Claude's first-run prompts ({recorded})")
         if not claude_is_logged_in():
             print("  ! Claude is not logged in yet — the agent will start but can't work.")
-            print(f"    Log in once:  tmux attach -t {name}   then  /login")
+            print(f"    Log in once:  tmux attach -t {shlex.quote(name)}   then  /login")
 
     # Create the session detached and launch the agent inside it.
     mk = subprocess.run(["tmux", "new-session", "-d", "-s", name, "-c", cwd], capture_output=True, text=True)

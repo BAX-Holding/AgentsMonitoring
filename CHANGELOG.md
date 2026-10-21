@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.12 (2026-10-22)
+
+- The login hint for a Claude agent quotes the session name, so `tmux attach -t "T - Claude"` works when pasted. A test checks every attach hint.
+- The `lsof` parsing test no longer reads a real `/proc/755` on Linux runners, where that PID can exist and made the test fail at random.
+
 ## 0.3.11 (2026-10-21)
 
 - New `agentsmon restart NAME…` / `agentsmon restart --all`: the dashboard restart from the command line, resuming each agent's conversation. Installers use it so running agents load new configuration (such as an MCP server) without a manual click.
