@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.10 (2026-10-21)
+
+- Setup discards keys typed while the installer was still running before it asks whether to expose the dashboard, and then prints the resulting dashboard address so a missed answer is visible at once.
+
 ## 0.3.9 (2026-10-21)
 
 - Claude Code model is found even when a large record follows the last assistant turn (the dashboard showed only "Claude Code").

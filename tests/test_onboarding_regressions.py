@@ -151,3 +151,29 @@ class Onboarding(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DashboardReachConfirmation(unittest.TestCase):
+    def _run(self, answers):
+        out = io.StringIO()
+        with patch.object(config, 'load', return_value=copy.deepcopy(config.DEFAULTS)), \
+             patch.object(config, 'save') as save, \
+             patch.object(wizard, '_scan_candidates', return_value=[]), \
+             patch.object(wizard, 'primary_ip', return_value='192.0.2.10'), \
+             patch.object(wizard, '_flush_typeahead') as flush, \
+             patch.object(wizard, '_ask_secret', return_value='pw'), \
+             patch.object(wizard.shutil, 'which', return_value='/fixture/tmux'), \
+             patch('builtins.input', side_effect=answers), redirect_stdout(out):
+            self.assertEqual(wizard.run(), 0)
+        flush.assert_called_once()
+        return out.getvalue(), save.call_args.args[0]
+
+    def test_exposed_dashboard_address_is_printed_right_after_the_answer(self):
+        text, cfg = self._run(['y', '8765', '', 'admin', 'n'])
+        self.assertIn('→ Dashboard: http://192.0.2.10:8765', text)
+        self.assertEqual(cfg['dashboard']['host'], '0.0.0.0')
+
+    def test_local_only_answer_is_visible(self):
+        text, cfg = self._run(['n', '8765', 'n', 'n'])
+        self.assertIn('→ Dashboard: http://127.0.0.1:8765  (this machine only', text)
+        self.assertEqual(cfg['dashboard']['host'], '127.0.0.1')

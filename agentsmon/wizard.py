@@ -275,6 +275,17 @@ def _ask(prompt: str, default: str = "") -> str:
     return val or default
 
 
+def _flush_typeahead() -> None:
+    """Drop keys pressed while the installer was still downloading, so a stray Enter can't
+    silently answer the next question with its default."""
+    try:
+        import termios
+        if sys.stdin.isatty():
+            termios.tcflush(sys.stdin, termios.TCIFLUSH)
+    except (ImportError, OSError, ValueError):
+        pass
+
+
 def _yes(prompt: str, default_yes: bool = True) -> bool:
     d = "Y/n" if default_yes else "y/N"
     ans = _ask(f"{prompt} ({d})").lower()
@@ -622,10 +633,14 @@ def run() -> int:
 
     # Dashboard reach: localhost always works; ask whether to also expose it on the machine's IP.
     print("\nThe dashboard is always reachable on this machine (http://127.0.0.1).")
+    _flush_typeahead()
     expose = _yes("Also make it reachable from outside — on the server's IP / the internet?",
                   default_yes=False)
     host = "0.0.0.0" if expose else "127.0.0.1"
     port = _ask("Dashboard port", "8765")
+    shown = f"http://{primary_ip()}:" if expose else "http://127.0.0.1:"
+    print(f"  → Dashboard: {shown}{port if port.isdigit() else 8765}"
+          + ("" if expose else "  (this machine only; rerun setup to change)"))
 
     cfg = config.load()
     cfg["dashboard"].update({"host": host, "port": int(port) if port.isdigit() else 8765})
