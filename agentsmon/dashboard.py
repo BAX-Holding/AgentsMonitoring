@@ -243,7 +243,10 @@ function renderColumns(root,columns){
   table.style.minWidth=(columns.length?810+columns.length*100:680)+"px";
 }
 function renderActions(a,table){
-  const defs=a.plugin?(a.row_actions||[]):(a.actions===false?[]:[{id:"restart",label:"Restart "+a.name,icon:"restart"},{id:"stop",label:"Stop "+a.name,icon:"stop"}]);
+  const stopped=a.status==="Stopped (manual)";
+  const defs=a.plugin?(a.row_actions||[]):(a.actions===false?[]:[{id:"restart",label:"Restart "+a.name,icon:"restart"},
+    stopped?{id:"stop",label:"Remove "+a.name,icon:"stop",confirm:`Remove agent "${a.name}" from Agents Monitoring? Its conversation files stay on disk.`}
+           :{id:"stop",label:"Stop "+a.name,icon:"stop"}]);
   const paths={restart:'M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6',stop:'M18 6 6 18M6 6l12 12',run:'M8 5l11 7-11 7z'};
   const buttons=defs.map(x=>`<button class="agent-act inline-flex align-middle p-1 rounded text-slate-400 ${x.icon==='stop'?'ml-0.5 hover:text-rose-600 hover:bg-rose-50':'hover:text-sky-600 hover:bg-slate-100'}" data-act="${esc(x.id)}" data-name="${esc(a.name)}" ${a.plugin?`data-table="${esc(table)}" data-row="${esc(a.id)}"`:''} data-confirm="${esc(x.confirm||'')}" title="${esc(x.label)}"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${paths[x.icon]||paths.run}"/></svg></button>`).join("");
   return buttons+((a.actions===false||a.actions_locked)?'<span class="text-xs text-slate-300 ml-0.5 align-middle" title="Actions controlled by the provider">🔒</span>':'');
@@ -394,7 +397,7 @@ document.addEventListener("click", async e=>{
   const btn=e.target.closest(".agent-act"); if(!btn) return;
   const name=btn.dataset.name, act=btn.dataset.act;
   if(btn.dataset.confirm && !confirm(btn.dataset.confirm)) return;
-  if(act==="stop" && !confirm(`Stop agent "${name}"? It won't be auto-restarted until you press ↻.`)) return;
+  if(act==="stop" && !btn.dataset.confirm && !confirm(`Stop agent "${name}"? It won't be auto-restarted until you press ↻.`)) return;
   btn.disabled=true; btn.classList.add("opacity-40");
   showToast((btn.dataset.table?"Running action for ":act==="restart"?"↻ Restarting ":"✕ Stopping ")+name+"…");
   try{
@@ -551,6 +554,23 @@ def _set_enabled(name: str, enabled: bool) -> None:
         os.chmod(path, 0o600)
 
 
+def _remove_agent(name: str) -> bool:
+    """Drop a stopped agent's entry from the RAW config file (targeted edit, rest preserved)."""
+    path = config.DEFAULT_PATH
+    try:
+        raw = json.loads(path.read_text("utf-8"))
+    except (OSError, ValueError):
+        return False
+    agents = raw.get("agents", [])
+    kept = [a for a in agents if a.get("name") != name]
+    if len(kept) == len(agents):
+        return False
+    raw["agents"] = kept
+    path.write_text(json.dumps(raw, indent=2, ensure_ascii=False), encoding="utf-8")
+    os.chmod(path, 0o600)
+    return True
+
+
 def _agent_action(name: str, action: str) -> tuple[bool, str]:
     """Dashboard row actions. action: 'restart' | 'stop'. Returns (ok, message)."""
     cfg = config.load()
@@ -593,6 +613,11 @@ def _agent_action(name: str, action: str) -> tuple[bool, str]:
         from . import managed
         return managed.action(daemon, 'restart')
     if action == "stop":
+        # A second stop on an already stopped agent removes it from the dashboard/config.
+        # Only the monitoring entry goes; conversation files and the CLI stay untouched.
+        if agent and not agent.get("enabled", True) and subprocess.run(
+                [tmux_bin, "has-session", "-t", name], capture_output=True, timeout=10).returncode != 0:
+            return (True, f"removed {name}") if _remove_agent(name) else (False, f"could not remove {name}")
         # Disable first so keepalive won't revive it, then kill the session / process.
         _set_enabled(name, False)
         if agent:

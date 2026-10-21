@@ -12,6 +12,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import time
 import sys
 from pathlib import Path
 
@@ -549,11 +550,18 @@ def new() -> int:
             from .dialogs import dismiss_optional_renderer
             if dismiss_optional_renderer(name):
                 print('  Declined the optional fullscreen renderer experiment.')
-        subprocess.run(["tmux", "send-keys", "-t", name, "Hello! Briefly introduce yourself.", "Enter"],
-                       capture_output=True)
+        send_first_message(name, "Hello! Briefly introduce yourself.")
     print(f"\nAttach to interact (or finish login):  tmux attach -t {shlex.quote(name)}")
     print('It now shows on the dashboard. Exact resume is pinned after session identity is verified.')
     return 0
+
+
+def send_first_message(name: str, text: str) -> None:
+    """Type the text, pause, then press Enter separately. Codex treats text and Enter that arrive
+    in one burst as a paste, so the Enter becomes a newline and the message is never sent."""
+    subprocess.run(["tmux", "send-keys", "-t", name, "-l", text], capture_output=True)
+    time.sleep(0.8)
+    subprocess.run(["tmux", "send-keys", "-t", name, "Enter"], capture_output=True)
 
 
 def run() -> int:

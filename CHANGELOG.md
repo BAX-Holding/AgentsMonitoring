@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.7 (2026-10-21)
+
+- Dashboard: pressing ✕ on an already stopped agent removes it from monitoring (with confirmation). Conversation files and the CLI are untouched.
+- `agentsmon new`: the first greeting is typed and submitted with a separate Enter, so Codex no longer treats it as a paste and leaves it unsent.
+
 ## 0.3.6 (2026-10-21)
 
 - `agentsmon new`: when exactly one agent CLI is installed, Enter selects it; the final "Continue?" now defaults to yes.

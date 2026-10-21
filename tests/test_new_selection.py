@@ -55,3 +55,14 @@ class SupportedAgentTypes(unittest.TestCase):
         from agentsmon import detect, wizard
         self.assertEqual([a['kind'] for a in wizard.AGENT_TYPES], ['claude-code', 'codex', 'antigravity'])
         self.assertEqual([k for k, _, _ in detect.KNOWN_AGENTS], ['claude-code', 'codex', 'antigravity'])
+
+
+class FirstMessage(unittest.TestCase):
+    def test_enter_is_sent_separately_after_the_text(self):
+        calls = []
+        with patch.object(wizard.subprocess, 'run', side_effect=lambda argv, **kw: calls.append(argv)), \
+             patch.object(wizard.time, 'sleep') as pause:
+            wizard.send_first_message('Helper', 'Hello!')
+        self.assertEqual(calls, [['tmux', 'send-keys', '-t', 'Helper', '-l', 'Hello!'],
+                                 ['tmux', 'send-keys', '-t', 'Helper', 'Enter']])
+        pause.assert_called_once()
