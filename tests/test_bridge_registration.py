@@ -21,13 +21,15 @@ class BridgeRegistration(unittest.TestCase):
             for item in (first, second, first):
                 bridges.register(cfg, item)
             self.assertEqual(len(cfg['daemons']), 2)
-            self.assertEqual(len(cfg['services']), 2)
+            self.assertEqual(cfg['services'], [{'name':'Telegram Bridge','kind':'bridges'}])
             with patch.object(bridges,'processes',return_value=[(123, {'config':'/tmp/one.json'})]):
                 status = detect.daemon_status(cfg['daemons'])
                 self.assertEqual([r['up'] for r in status], [True, False])
                 with patch.object(probe.db,'record') as record:
                     probe.probe_once(cfg)
-                self.assertEqual([c.args[1] for c in record.call_args_list], [True, False])
+                self.assertEqual([c.args[:2] for c in record.call_args_list], [('Telegram Bridge', False)])
+                self.assertIn('1/2 bridges running', record.call_args_list[0].args[3])
+                self.assertIn(cfg['daemons'][1]['name'], record.call_args_list[0].args[3])
             args = shlex.split(first['restart'])
             self.assertIn('PYTHONPATH=/source path', args)
             self.assertIn('AGENT2TELEGRAM_STATE=/tmp/state-one', args)
@@ -78,3 +80,32 @@ class BridgeRegistration(unittest.TestCase):
              patch.object(detect,'_run',return_value=CompletedProcess([],0,raw,'')):
             env = bridges.process_env(123)
         self.assertEqual(env, {'PYTHONPATH':'/source path','AGENT2TELEGRAM_CONFIG':'/tmp/a.json'})
+
+
+class SharedBridgeCard(unittest.TestCase):
+    def test_one_card_is_green_only_when_every_bridge_runs(self):
+        cfg = {'daemons':[{'name':'A','bridge_config':'/tmp/a.json'},
+                          {'name':'B','bridge_config':'/tmp/b.json'},
+                          {'name':'Off','bridge_config':'/tmp/c.json','enabled':False}]}
+        both = [(1, {'config':'/tmp/a.json'}), (2, {'config':'/tmp/b.json'})]
+        with patch.object(bridges, 'processes', return_value=both):
+            self.assertEqual(bridges.health(cfg), (True, '2/2 bridges running'))
+        with patch.object(bridges, 'processes', return_value=both[:1]):
+            self.assertEqual(bridges.health(cfg), (False, '1/2 bridges running; down: B'))
+        self.assertIsNone(bridges.health({'daemons':[]}))
+
+    def test_bridge_is_named_after_its_session_and_legacy_title_is_renamed(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d)/'config.json'
+            path.write_text(json.dumps({'tmux_session':'Helper - Codex', 'token':'never-read'}))
+            item = bridges.entry(str(path), '/usr/bin/python3')
+            self.assertEqual(item['name'], 'Telegram Bridge: Helper - Codex')
+            self.assertNotIn('never-read', json.dumps(item))
+            cfg = {'daemons':[{'name':'Telegram Bridge: config [5580834b604c]',
+                               'bridge_config':item['bridge_config'], 'enabled':False}]}
+            bridges.register(cfg, item)
+            self.assertEqual(cfg['daemons'][0]['name'], 'Telegram Bridge: Helper - Codex')
+            self.assertFalse(cfg['daemons'][0]['enabled'])
+            custom = {'daemons':[{'name':'My bot', 'bridge_config':item['bridge_config']}]}
+            bridges.register(custom, item)
+            self.assertEqual(custom['daemons'][0]['name'], 'My bot')

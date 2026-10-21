@@ -76,7 +76,8 @@ and [loginctl](https://www.freedesktop.org/software/systemd/man/latest/loginctl.
 
 ### Optional bridge registration API
 
-Each Agent2Telegram config gets its own daemon and availability card. Integrators
+Each Agent2Telegram config gets its own supervised daemon (restarted on failure). All bridges share one
+"Telegram Bridge" availability card, which is green only when every enabled bridge runs and names any that is down. Integrators
 can register without prompts or restarting the dashboard:
 
 ```bash

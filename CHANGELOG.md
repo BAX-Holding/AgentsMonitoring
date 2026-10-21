@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.8 (2026-10-21)
+
+- All Telegram bridges share one "Telegram Bridge" availability card. It is green only when every enabled bridge runs; the detail shows how many run and names any that is down. Each bridge is still restarted on its own.
+- Bridges are named after the bridged tmux session instead of the config file name and a hash. Older automatic names are renamed on the next registration; custom names are kept.
+
 ## 0.3.7 (2026-10-21)
 
 - Dashboard: pressing ✕ on an already stopped agent removes it from monitoring (with confirmation). Conversation files and the CLI are untouched.
