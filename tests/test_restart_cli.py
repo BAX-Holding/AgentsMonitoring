@@ -4,7 +4,7 @@ import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
 
-from agentsmon import __main__ as cli, config, dashboard, detect, restarter
+from agentsmon import __main__ as cli, config, dashboard, detect
 
 
 CFG = {'agents': [{'name': 'Codex'}, {'name': 'Claude'}, {'name': 'Off', 'enabled': False}]}
