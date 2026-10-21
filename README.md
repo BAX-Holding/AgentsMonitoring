@@ -175,6 +175,9 @@ To **spin up a fresh agent**, run `agentsmon new`: it asks for a type (Claude Co
 Antigravity — whichever CLIs are installed) and a name, launches it in its own
 tmux session, and registers it for keepalive + the dashboard in one step.
 
+`agentsmon restart NAME` (or `--all`) restarts supervised agents from the command line and resumes
+their conversation, e.g. after an installer added a new MCP server.
+
 In the dashboard, ✕ stops an agent (keepalive leaves it alone, ↻ starts it again). Pressing ✕ on
 an already stopped agent removes it from monitoring; its conversation files stay on disk.
 

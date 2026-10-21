@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.11 (2026-10-21)
+
+- New `agentsmon restart NAME…` / `agentsmon restart --all`: the dashboard restart from the command line, resuming each agent's conversation. Installers use it so running agents load new configuration (such as an MCP server) without a manual click.
+
 ## 0.3.10 (2026-10-21)
 
 - Setup discards keys typed while the installer was still running before it asks whether to expose the dashboard, and then prints the resulting dashboard address so a missed answer is visible at once.

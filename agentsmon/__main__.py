@@ -29,6 +29,9 @@ def main(argv=None) -> int:
     add.add_argument('--bridge-pythonpath', default='')
     add.add_argument('--bridge-state', default='')
     sub.add_parser("update", help="pull the latest code and reload (no re-setup)")
+    rs = sub.add_parser("restart", help="restart supervised agents (resuming their conversation)")
+    rs.add_argument("names", nargs="*", help="agent names; omit with --all")
+    rs.add_argument("--all", action="store_true", help="every enabled agent that is running")
     sub.add_parser("status", help="print live status")
     ka = sub.add_parser("keepalive", help="restart anything that died")
     ka.add_argument("--loop", action="store_true", help="run continuously")
@@ -70,6 +73,11 @@ def main(argv=None) -> int:
     if args.command == "update":
         from . import updater
         return updater.run()
+    if args.command == "restart":
+        if not args.names and not args.all:
+            p.error("name an agent or use --all")
+        from . import restarter
+        return restarter.run(args.names, every=args.all)
     if args.command == "service":
         from . import service
         return service.main()
