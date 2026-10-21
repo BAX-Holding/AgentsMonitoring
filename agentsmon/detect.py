@@ -311,18 +311,24 @@ def _pretty_claude_model(raw: str) -> str:
 def _claude_model_from_transcript(path: str) -> str | None:
     """The model a Claude Code session is actually running, from the tail of its transcript (each
     assistant turn records ``message.model``); we take the latest real one, ignoring synthetic."""
+    # A young session can end in a large non-assistant record (attachments, tool output), so the
+    # tail alone may hold no model at all; widen the window backwards up to a fixed cap.
     try:
         size = os.path.getsize(path)
         with open(path, "rb") as fh:
-            if size > 65536:
-                fh.seek(size - 65536)
-            data = fh.read().decode("utf-8", "ignore")
+            window = 65536
+            while True:
+                start = max(0, size - window)
+                fh.seek(start)
+                data = fh.read().decode("utf-8", "ignore")
+                for m in reversed(re.findall(r'"model"\s*:\s*"([^"]+)"', data)):
+                    if m and m != "<synthetic>":
+                        return _pretty_claude_model(m)
+                if start == 0 or window >= 8 * 1024 * 1024:
+                    return None
+                window *= 4
     except OSError:
         return None
-    for m in reversed(re.findall(r'"model"\s*:\s*"([^"]+)"', data)):
-        if m and m != "<synthetic>":
-            return _pretty_claude_model(m)
-    return None
 
 
 def claude_project_dirs(cwd: str) -> list[Path]:

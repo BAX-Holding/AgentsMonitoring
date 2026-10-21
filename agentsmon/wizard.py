@@ -143,9 +143,22 @@ def wait_for_tui(name: str, timeout: float = 25.0) -> bool:
         r = subprocess.run(["tmux", "display-message", "-p", "-t", name, "#{pane_current_command}"],
                            capture_output=True, text=True)
         if r.returncode == 0 and r.stdout.strip() and r.stdout.strip() not in shells:
-            return True
+            break
         time.sleep(0.5)
-    return False
+    else:
+        return False
+    # The process is up, but its input box may still be drawing (Claude Code takes a few
+    # seconds); keys sent now are lost. Wait until the screen stops changing.
+    previous, stable = None, 0
+    while time.monotonic() < deadline:
+        r = subprocess.run(["tmux", "capture-pane", "-p", "-t", name], capture_output=True, text=True)
+        screen = r.stdout if r.returncode == 0 else ''
+        stable = stable + 1 if screen.strip() and screen == previous else 0
+        if stable >= 3:
+            return True
+        previous = screen
+        time.sleep(0.5)
+    return True
 
 
 def _auto_restart(a: dict) -> str:

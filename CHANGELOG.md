@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.9 (2026-10-21)
+
+- Claude Code model is found even when a large record follows the last assistant turn (the dashboard showed only "Claude Code").
+- `agentsmon new` waits until the agent screen is fully drawn before sending the first greeting, so Claude Code no longer misses it.
+
 ## 0.3.8 (2026-10-21)
 
 - All Telegram bridges share one "Telegram Bridge" availability card. It is green only when every enabled bridge runs; the detail shows how many run and names any that is down. Each bridge is still restarted on its own.
