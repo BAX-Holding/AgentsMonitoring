@@ -178,9 +178,13 @@ def choose_agent():
     for i, entry in enumerate(choices, 1):
         missing = ' (not installed / not on PATH)' if not entry['executable'] else ''
         print(f"  [{i}] {entry['label']}{missing}")
+    installed = [i for i, entry in enumerate(choices, 1) if entry['executable']]
+    # Exactly one installed CLI → Enter picks it; otherwise the choice stays explicit.
+    default = str(installed[0]) if len(installed) == 1 else ''
+    prompt = f'\nNumber [{default}]: ' if default else '\nNumber (required; Ctrl-C to cancel): '
     while True:
         try:
-            value = input('\nNumber (required; Ctrl-C to cancel): ').strip()
+            value = input(prompt).strip() or default
         except EOFError:
             return None
         if not value.isdigit() or not 1 <= int(value) <= len(choices):
@@ -501,7 +505,7 @@ def new() -> int:
 
     cwd = str(Path(_ask("Working directory", str(Path.home()))).expanduser())
     print(f"Creating {chosen['label']}: {name} in {cwd}. Executable: {chosen['executable']}")
-    if not _yes('Continue?', default_yes=False):
+    if not _yes('Continue?', default_yes=True):
         return 0
 
     # Answer Claude's first-run prompts BEFORE launching, or the agent sits on the trust dialog

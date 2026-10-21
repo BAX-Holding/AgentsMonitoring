@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.6 (2026-10-21)
+
+- `agentsmon new`: when exactly one agent CLI is installed, Enter selects it; the final "Continue?" now defaults to yes.
+
 ## 0.3.5 (2026-10-21)
 
 - `agentsmon new` and agent detection now offer only Claude Code, Codex and Antigravity. Aider and Gemini CLI were removed (Antigravity is Google's current agent CLI). Use the config `match` keyword to monitor any other CLI.
