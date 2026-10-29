@@ -21,7 +21,7 @@ def entry(config_path, python, pythonpath='', state=''):
     if any('\n' in s or '\0' in s for s in (path, python, pythonpath, state)):
         raise ValueError('Bridge paths must not contain control characters.')
     tag = hashlib.sha256(path.encode()).hexdigest()[:12]
-    name = 'Telegram Bridge: '+Path(path).stem+' ['+tag+']'
+    name = 'Telegram Bridge: '+(_session_label(path) or Path(path).stem)
     argv = [python, '-m', 'agent2telegram', 'run', '--config', path]
     env = ['AGENT2TELEGRAM_CONFIG='+path]
     if pythonpath:
@@ -32,6 +32,21 @@ def entry(config_path, python, pythonpath='', state=''):
     pattern = r'(^|[ /])agent2telegram run --config '+re.escape(path)+r'($|[[:space:]])'
     return {'name':name, 'pattern':pattern, 'bridge_config':path, 'enabled':True,
             'restart':'nohup '+shlex.join(['env']+env+argv)+' >> '+shlex.quote(log)+' 2>&1 &'}
+
+
+CARD = 'Telegram Bridge'
+LEGACY_NAME = re.compile(r'^Telegram Bridge: .+ \[[0-9a-f]{12}\]$')
+
+
+def _session_label(path):
+    """The bridged tmux session name (a non-secret field) for a readable title."""
+    try:
+        value = json.loads(Path(path).read_text('utf-8')).get('tmux_session')
+    except (OSError, ValueError, AttributeError):
+        return ''
+    if not isinstance(value, str):
+        return ''
+    return ' '.join(value.split())[:60]
 
 
 def process_env(pid):
@@ -113,24 +128,39 @@ def register(cfg, item):
     """Idempotent shared implementation for interactive add and the public CLI."""
     entries = cfg.setdefault('daemons', [])
     existing = next((d for d in entries if d.get('bridge_config') == item['bridge_config']), None)
+    if item['name'] in {d.get('name') for d in entries if d is not existing}:
+        # Two bridges for the same session/file name: keep them apart with the path hash.
+        item = {**item, 'name':item['name']+' ['+hashlib.sha256(item['bridge_config'].encode()).hexdigest()[:12]+']'}
     if existing:
-        # Preserve explicit stopped state, display overrides, and restart ownership.
-        item = {**item, 'enabled':existing.get('enabled', True), 'name':existing['name'],
+        # Preserve stopped state, custom names, and operator-controlled restart ownership.
+        keep = item['name'] if LEGACY_NAME.match(existing.get('name', '')) else existing['name']
+        item = {**item, 'enabled':existing.get('enabled', True), 'name':keep,
                 **({'restart':existing['restart']} if 'restart' in existing else {})}
         existing.update(item)
     else:
         entries.append(item)
     cfg['daemons'] = [d for d in entries if not (d.get('name') == 'Telegram Bridge'
                      and d.get('pattern') == 'agent2telegram run')]
-    # Replace legacy shared health card: one healthy bot must not hide a dead one.
-    cfg['services'] = [s for s in cfg.get('services', []) if s.get('name') != 'Telegram Bridge Status']
-    services = cfg.setdefault('services', [])
-    monitor = {'name':item['name'], 'bridge_config':item['bridge_config'], 'kind':'bridge'}
-    found = next((s for s in services if s.get('bridge_config') == item['bridge_config']), None)
-    if found:
-        found.update(monitor)
-    else:
-        services.append(monitor)
+    # One card for all bridges. It is up only when every enabled bridge runs, so a healthy bot
+    # never hides a dead one; the detail names the missing bridge. Per-bridge cards and the
+    # legacy shared card are folded into it.
+    services = [s for s in cfg.get('services', [])
+                if not s.get('bridge_config') and s.get('name') != 'Telegram Bridge Status']
+    if not any(s.get('kind') == 'bridges' for s in services):
+        services.append({'name':CARD, 'kind':'bridges'})
+    cfg['services'] = services
+
+
+def health(cfg):
+    """(up, detail) for the shared card; None when no bridge is configured."""
+    specs = [d for d in cfg.get('daemons', []) if d.get('bridge_config') and d.get('enabled', True)]
+    if not specs:
+        return None
+    missing = [d['name'] for d in specs if not running_pids(d)]
+    detail = f"{len(specs)-len(missing)}/{len(specs)} bridges running"
+    if missing:
+        detail += '; down: '+', '.join(missing)
+    return not missing, detail
 
 
 def add_noninteractive(args):

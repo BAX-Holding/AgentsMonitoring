@@ -135,7 +135,8 @@ def _system_health(cfg: dict) -> tuple[bool, float | None, str]:
     down: list[str] = []
     lats: dict[str, float] = {}
 
-    alive = {a["name"] for a in detect.discover_agents(_config.agent_matches(cfg)) if a.get("alive")}
+    alive = {a["name"] for a in detect.discover_agents(_config.agent_matches(cfg))
+             if a.get("alive") and not a.get('needs_login')}
     for a in cfg.get("agents", []):
         if a.get("enabled", True) and a.get("name") and a["name"] not in alive:
             down.append(a["name"])
@@ -146,7 +147,7 @@ def _system_health(cfg: dict) -> tuple[bool, float | None, str]:
     # by install method (venv / pip --user / pipx) and a stale regex would fake an outage.
     checks = list(cfg.get("daemons", []))
     checks += list(cfg.get("pinned_daemons", []))
-    checks += [s for s in cfg.get("services", []) if s.get("kind") != "system"]
+    checks += [s for s in cfg.get("services", []) if s.get("kind") not in ("system", "bridges")]
     for c in checks:
         name = c.get("name") or c.get("process") or c.get("pattern") or "?"
         if c.get('bridge_config'):
@@ -253,6 +254,12 @@ def probe_once(cfg: dict) -> None:
         if s.get("kind") == "system":
             ok, lat, detail = _system_health(cfg)
             db.record(name, ok, lat, detail)
+            continue
+        if s.get('kind') == 'bridges':
+            from . import bridges
+            state = bridges.health(cfg)
+            if state is not None:
+                db.record(name, state[0], None, state[1])
             continue
         if s.get('bridge_config'):
             from . import bridges

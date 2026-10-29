@@ -31,14 +31,11 @@ KNOWN_AGENTS = [
     ("claude-code", "Claude Code", re.compile(r"(?:^|/)claude(?:\s|$)")),
     ("codex", "Codex", re.compile(r"(?:^|/)codex(?:\s|$|\sexec\b)")),
     ("antigravity", "Antigravity", re.compile(r"(?:^|/)agy(?:\s|$)")),
-    ("aider", "Aider", re.compile(r"(?:^|/)aider(?:\s|$)")),
-    ("gemini", "Gemini CLI", re.compile(r"(?:^|/)gemini(?:\s|$)")),
 ]
 
 #: Maps a detected kind to the maker, which colours its tag in the UI (anthropic=orange,
 #: openai=emerald, google=violet, other=slate).
-KIND_VENDOR = {"claude-code": "anthropic", "codex": "openai", "gemini": "google",
-               "antigravity": "google", "aider": "other"}
+KIND_VENDOR = {"claude-code": "anthropic", "codex": "openai", "antigravity": "google"}
 
 #: How to resume a session per kind ({id} → session id). Shown as a hover tooltip on the id.
 RESUME_TEMPLATES = {
@@ -314,18 +311,24 @@ def _pretty_claude_model(raw: str) -> str:
 def _claude_model_from_transcript(path: str) -> str | None:
     """The model a Claude Code session is actually running, from the tail of its transcript (each
     assistant turn records ``message.model``); we take the latest real one, ignoring synthetic."""
+    # A young session can end in a large non-assistant record (attachments, tool output), so the
+    # tail alone may hold no model at all; widen the window backwards up to a fixed cap.
     try:
         size = os.path.getsize(path)
         with open(path, "rb") as fh:
-            if size > 65536:
-                fh.seek(size - 65536)
-            data = fh.read().decode("utf-8", "ignore")
+            window = 65536
+            while True:
+                start = max(0, size - window)
+                fh.seek(start)
+                data = fh.read().decode("utf-8", "ignore")
+                for m in reversed(re.findall(r'"model"\s*:\s*"([^"]+)"', data)):
+                    if m and m != "<synthetic>":
+                        return _pretty_claude_model(m)
+                if start == 0 or window >= 8 * 1024 * 1024:
+                    return None
+                window *= 4
     except OSError:
         return None
-    for m in reversed(re.findall(r'"model"\s*:\s*"([^"]+)"', data)):
-        if m and m != "<synthetic>":
-            return _pretty_claude_model(m)
-    return None
 
 
 def claude_project_dirs(cwd: str) -> list[Path]:
@@ -463,7 +466,11 @@ def open_files(pids: list) -> list[str]:
     for pid in pids or []:
         fd = Path("/proc") / str(pid) / "fd"
         if fd.is_dir():
-            for link in fd.iterdir():
+            try:
+                links = list(fd.iterdir())
+            except OSError:
+                continue  # Exited/non-dumpable child during boot; identity stays unknown.
+            for link in links:
                 try:
                     out.append(os.path.realpath(link))
                 except OSError:
@@ -752,7 +759,41 @@ def discover_agents(extra_matches: list[tuple] | None = None, now: float | None 
             "resume_cmd": resume, "pids": row['pids'],
             "identity_conflict": row.get('identity_conflict', False),
         })
+        if kind in ('codex', 'claude-code'):
+            pane = _run([_tmux_bin(), 'capture-pane', '-p', '-t', row['name']])
+            if pane and pane.returncode == 0 and login_screen(kind, pane.stdout):
+                agents[-1].update(needs_login=True, status='Needs login')
     return agents
+
+
+def login_screen(kind: str, text: str) -> bool:
+    """Recognize current login UI only; never inspect a shared credential store."""
+    clean = re.sub(r'\x1b\[[0-9;?]*[A-Za-z]', '', text)
+    lines = [line.strip().lstrip('›❯').strip() for line in clean.splitlines() if line.strip()][-18:]
+    if kind == 'codex':
+        return (any(re.fullmatch(r'>?\s*1\. Sign in with ChatGPT', line) for line in lines)
+                and '2. Sign in with Device Code' in lines
+                and any('API key' in line and line.startswith('3.') for line in lines))
+    if kind == 'claude-code':
+        return any(re.fullmatch(r'(?:⎿\s*|⏵⏵ bypass permissions on \(shift\+tab to cycle\)\s+)?'
+                                r'Not logged in\s*[·.]\s*(?:Please run|Run) /login',
+                                line, re.I) for line in lines[-6:])
+    return False
+
+
+def configured_agents(cfg: dict) -> list[dict]:
+    """Include configured agents even after their tmux session was stopped."""
+    from . import config
+    rows = discover_agents(config.agent_matches(cfg))
+    names = {r['name'] for r in rows}
+    for entry in cfg.get('agents', []):
+        if entry['name'] not in names:
+            rows.append({'name':entry['name'], 'kind':entry.get('kind', 'custom-match'),
+                         'label':entry.get('label') or entry.get('kind', 'Agent'),
+                         'session_id':None, 'resume_cmd':None, 'pids':[], 'age':None,
+                         'alive':False, 'vendor':vendor_for_agent(entry.get('kind', ''), ''),
+                         'status':'Stopped (manual)' if not entry.get('enabled', True) else 'Not running'})
+    return rows
 
 
 def _tokens_under_telegram(obj, in_tg: bool = False) -> list[str]:

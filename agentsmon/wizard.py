@@ -6,11 +6,13 @@ config, and installs the boot service. Designed to need almost no typing.
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 import shlex
 import shutil
 import subprocess
+import time
 import sys
 from pathlib import Path
 
@@ -22,11 +24,8 @@ RESTART_DEFAULTS = {
     "claude-code": "claude --dangerously-skip-permissions --resume {id}",
     "codex": "codex --dangerously-bypass-approvals-and-sandbox resume {id}",
     "antigravity": "agy --conversation {id} --dangerously-skip-permissions",
-    "aider": "aider",
-    "gemini": "gemini",
 }
-MATCH_KEYWORD = {"claude-code": "claude", "codex": "codex", "antigravity": "agy",
-                 "aider": "aider", "gemini": "gemini"}
+MATCH_KEYWORD = {"claude-code": "claude", "codex": "codex", "antigravity": "agy"}
 
 #: For `agentsmon new` — create a brand-new agent. Per kind: the CLI binary to check, a human
 #: label and fresh launch command. Exact pins resume history; unknown identities
@@ -38,8 +37,6 @@ AGENT_TYPES = [
      "launch": "codex --dangerously-bypass-approvals-and-sandbox"},
     {"kind": "antigravity", "label": "Antigravity", "bin": "agy",
      "launch": "agy --dangerously-skip-permissions"},
-    {"kind": "aider", "label": "Aider", "bin": "aider", "launch": "aider", "restart": "aider"},
-    {"kind": "gemini", "label": "Gemini", "bin": "gemini", "launch": "gemini", "restart": "gemini"},
 ]
 
 
@@ -123,6 +120,16 @@ def claude_is_logged_in(home: Path | None = None) -> bool:
     return ((home or Path.home()) / ".claude" / ".credentials.json").exists()
 
 
+def codex_is_logged_in(executable: str) -> bool:
+    """Check the selected CLI's credentials without printing or copying them."""
+    try:
+        result = subprocess.run([executable, 'login', 'status'], stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def wait_for_tui(name: str, timeout: float = 25.0) -> bool:
     """Wait until the tmux pane runs something other than a shell — i.e. the agent TUI is up.
 
@@ -136,9 +143,22 @@ def wait_for_tui(name: str, timeout: float = 25.0) -> bool:
         r = subprocess.run(["tmux", "display-message", "-p", "-t", name, "#{pane_current_command}"],
                            capture_output=True, text=True)
         if r.returncode == 0 and r.stdout.strip() and r.stdout.strip() not in shells:
-            return True
+            break
         time.sleep(0.5)
-    return False
+    else:
+        return False
+    # The process is up, but its input box may still be drawing (Claude Code takes a few
+    # seconds); keys sent now are lost. Wait until the screen stops changing.
+    previous, stable = None, 0
+    while time.monotonic() < deadline:
+        r = subprocess.run(["tmux", "capture-pane", "-p", "-t", name], capture_output=True, text=True)
+        screen = r.stdout if r.returncode == 0 else ''
+        stable = stable + 1 if screen.strip() and screen == previous else 0
+        if stable >= 3:
+            return True
+        previous = screen
+        time.sleep(0.5)
+    return True
 
 
 def _auto_restart(a: dict) -> str:
@@ -172,9 +192,13 @@ def choose_agent():
     for i, entry in enumerate(choices, 1):
         missing = ' (not installed / not on PATH)' if not entry['executable'] else ''
         print(f"  [{i}] {entry['label']}{missing}")
+    installed = [i for i, entry in enumerate(choices, 1) if entry['executable']]
+    # Exactly one installed CLI → Enter picks it; otherwise the choice stays explicit.
+    default = str(installed[0]) if len(installed) == 1 else ''
+    prompt = f'\nNumber [{default}]: ' if default else '\nNumber (required; Ctrl-C to cancel): '
     while True:
         try:
-            value = input('\nNumber (required; Ctrl-C to cancel): ').strip()
+            value = input(prompt).strip() or default
         except EOFError:
             return None
         if not value.isdigit() or not 1 <= int(value) <= len(choices):
@@ -249,6 +273,17 @@ def _ask(prompt: str, default: str = "") -> str:
     except EOFError:
         return default
     return val or default
+
+
+def _flush_typeahead() -> None:
+    """Drop keys pressed while the installer was still downloading, so a stray Enter can't
+    silently answer the next question with its default."""
+    try:
+        import termios
+        if sys.stdin.isatty():
+            termios.tcflush(sys.stdin, termios.TCIFLUSH)
+    except (ImportError, OSError, ValueError):
+        pass
 
 
 def _yes(prompt: str, default_yes: bool = True) -> bool:
@@ -389,7 +424,7 @@ def _scan_candidates(known: set) -> list:
     for d in COMMON_DAEMONS:
         from . import managed
         owner = managed.discover(d)
-        running = _running(d["pattern"])
+        running = (managed.active(owner) is True if owner else bool(managed.process_ids(d)))
         if (owner or running or find_cli(d.get("binary", ""))) and d["name"] not in known:
             out.append({"kind": "daemon", "obj": {**d, **({'manager':owner} if owner else {})},
                         "display": f"{d['name']}  (daemon{'' if running else ', not running'})"})
@@ -417,6 +452,8 @@ def add() -> int:
     candidates = _scan_candidates(known)
     from . import managed
     for current in cfg.get('daemons', []):
+        if not current.get('enabled', True):
+            continue  # An explicit stop is not a broken service installation.
         defaults = next((d for d in COMMON_DAEMONS if d['name'] == current.get('name')), {})
         owner = managed.discover({**defaults, **current})
         if owner and owner.get('type') == 'systemd':
@@ -493,7 +530,7 @@ def new() -> int:
 
     cwd = str(Path(_ask("Working directory", str(Path.home()))).expanduser())
     print(f"Creating {chosen['label']}: {name} in {cwd}. Executable: {chosen['executable']}")
-    if not _yes('Continue?', default_yes=False):
+    if not _yes('Continue?', default_yes=True):
         return 0
 
     # Answer Claude's first-run prompts BEFORE launching, or the agent sits on the trust dialog
@@ -504,7 +541,7 @@ def new() -> int:
             print(f"  ✓ pre-answered Claude's first-run prompts ({recorded})")
         if not claude_is_logged_in():
             print("  ! Claude is not logged in yet — the agent will start but can't work.")
-            print(f"    Log in once:  tmux attach -t {name}   then  /login")
+            print(f"    Log in once:  tmux attach -t {shlex.quote(name)}   then  /login")
 
     # Create the session detached and launch the agent inside it.
     mk = subprocess.run(["tmux", "new-session", "-d", "-s", name, "-c", cwd], capture_output=True, text=True)
@@ -527,18 +564,28 @@ def new() -> int:
     # Kick off a first turn so the agent registers its session id + model right away — a brand-new
     # session shows neither until its first message. Wait for the TUI to actually come up first;
     # a flat sleep sent the keys into a shell on a cold machine and nothing registered.
-    if not wait_for_tui(name):
+    if chosen['kind'] == 'codex' and not codex_is_logged_in(chosen['executable']):
+        print('  ! Codex is not logged in yet (or login status could not be verified).')
+        print(f'    Run tmux attach -t {shlex.quote(name)}, press Esc if needed and choose Sign in with Device Code.')
+    elif not wait_for_tui(name):
         print("  ! the agent TUI didn't come up in time — send it a first message yourself")
     else:
         if chosen['kind'] == 'claude-code':
             from .dialogs import dismiss_optional_renderer
             if dismiss_optional_renderer(name):
                 print('  Declined the optional fullscreen renderer experiment.')
-        subprocess.run(["tmux", "send-keys", "-t", name, "Hello! Briefly introduce yourself.", "Enter"],
-                       capture_output=True)
+        send_first_message(name, "Hello! Briefly introduce yourself.")
     print(f"\nAttach to interact (or finish login):  tmux attach -t {shlex.quote(name)}")
     print('It now shows on the dashboard. Exact resume is pinned after session identity is verified.')
     return 0
+
+
+def send_first_message(name: str, text: str) -> None:
+    """Type the text, pause, then press Enter separately. Codex treats text and Enter that arrive
+    in one burst as a paste, so the Enter becomes a newline and the message is never sent."""
+    subprocess.run(["tmux", "send-keys", "-t", name, "-l", text], capture_output=True)
+    time.sleep(0.8)
+    subprocess.run(["tmux", "send-keys", "-t", name, "Enter"], capture_output=True)
 
 
 def run() -> int:
@@ -547,6 +594,16 @@ def run() -> int:
         print("⚠️  tmux not found — agents run inside tmux, so install tmux first.")
     print("Scanning for agents and daemons…\n")
     candidates = _scan_candidates(set())   # everything (fresh setup)
+    previous = copy.deepcopy(config.load())
+    # Missing/stopped entries still belong to the user's configuration. Offer
+    # them without interpreting setup's default selection as permission to start.
+    seen = {c['obj']['name'] for c in candidates}
+    for key, kind in (('agents', 'agent'), ('daemons', 'daemon')):
+        for entry in previous.get(key, []):
+            if entry['name'] not in seen:
+                candidates.append({'kind':kind, 'obj':entry, 'existing':True,
+                                   'display':entry['name']+' (configured; keep current settings)'})
+                seen.add(entry['name'])
 
     chosen: set = set()
     if not candidates:
@@ -565,19 +622,25 @@ def run() -> int:
         if i not in chosen:
             continue
         if c["kind"] == "agent":
-            agents.append(_agent_entry(c["obj"]))
+            old = next((a for a in previous.get('agents', []) if a['name'] == c['obj']['name']), None)
+            agents.append(dict(old) if old is not None else _agent_entry(c['obj']))
         elif c['kind'] == 'bridge':
             bridge_entries.append(c['obj'])
         else:
-            daemons.append(c["obj"])
+            old = next((d for d in previous.get('daemons', []) if d['name'] == c['obj']['name']), {})
+            daemons.append({**c['obj'], **old})
     print(f"\n  → will monitor {len(agents)} agent(s) + {len(daemons)} daemon(s), with auto-restart.")
 
     # Dashboard reach: localhost always works; ask whether to also expose it on the machine's IP.
     print("\nThe dashboard is always reachable on this machine (http://127.0.0.1).")
+    _flush_typeahead()
     expose = _yes("Also make it reachable from outside — on the server's IP / the internet?",
                   default_yes=False)
     host = "0.0.0.0" if expose else "127.0.0.1"
     port = _ask("Dashboard port", "8765")
+    shown = f"http://{primary_ip()}:" if expose else "http://127.0.0.1:"
+    print(f"  → Dashboard: {shown}{port if port.isdigit() else 8765}"
+          + ("" if expose else "  (this machine only; rerun setup to change)"))
 
     cfg = config.load()
     cfg["dashboard"].update({"host": host, "port": int(port) if port.isdigit() else 8765})
@@ -606,7 +669,10 @@ def run() -> int:
     cfg["services"] = [dict(SYSTEM_SERVICE)]
     for d in daemons:
         dmn, pin = _daemon_entries(d)
-        if dmn.get('manager'):
+        old_pin = next((p for p in previous.get('pinned_daemons', []) if p['name'] == d['name']), {})
+        pin.update(old_pin)
+        pin['enabled'] = dmn.get('enabled', True)
+        if dmn.get('manager') and dmn.get('enabled', True):
             from . import managed
             ok, notes = managed.activate(dmn['manager'])
             for note in notes:

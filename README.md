@@ -76,7 +76,8 @@ and [loginctl](https://www.freedesktop.org/software/systemd/man/latest/loginctl.
 
 ### Optional bridge registration API
 
-Each Agent2Telegram config gets its own daemon and availability card. Integrators
+Each Agent2Telegram config gets its own supervised daemon (restarted on failure). All bridges share one
+"Telegram Bridge" availability card, which is green only when every enabled bridge runs and names any that is down. Integrators
 can register without prompts or restarting the dashboard:
 
 ```bash
@@ -171,8 +172,14 @@ The wizard scans tmux, lists the agents it found, lets you pick which to supervi
 restart command for each), optionally watches detected daemons, and installs the boot service.
 
 To **spin up a fresh agent**, run `agentsmon new`: it asks for a type (Claude Code / Codex /
-Antigravity / Aider / Gemini — whichever CLIs are installed) and a name, launches it in its own
+Antigravity — whichever CLIs are installed) and a name, launches it in its own
 tmux session, and registers it for keepalive + the dashboard in one step.
+
+`agentsmon restart NAME` (or `--all`) restarts supervised agents from the command line and resumes
+their conversation, e.g. after an installer added a new MCP server.
+
+In the dashboard, ✕ stops an agent (keepalive leaves it alone, ↻ starts it again). Pressing ✕ on
+an already stopped agent removes it from monitoring; its conversation files stay on disk.
 
 ---
 
@@ -260,8 +267,8 @@ The normal interactive installer behavior is unchanged.
 ## How detection works
 
 Agents live in **tmux**, so for every session we walk the pane process tree and classify it by
-the command line: `claude` → Claude Code, `codex` → Codex (plus `aider`, `gemini` out of the
-box; add your own via the config `match` keyword). A session whose tree is only a login shell is
+the command line: `claude` → Claude Code, `codex` → Codex, `agy` → Antigravity (add your own via the
+config `match` keyword). A session whose tree is only a login shell is
 shown as **idle**. Background **daemons** aren't in tmux, so they're matched by a process pattern
 (`pgrep -f`) and an optional HTTP health URL.
 
